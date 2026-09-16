@@ -9,6 +9,9 @@ description = "Personal quant research and backtesting framework."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
+authors = [
+    { name = "Gustavo de Baccho Jorge Filho", email = "gustavob.jorge@hotmail.com" },
+]
 dependencies = [
     "pandas>=2.0",
     "numpy>=1.26",
@@ -16,6 +19,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["ruff", "mypy", "pytest", "pytest-cov"]
+
+[project.urls]
+Repository = "https://github.com/gustavobjorgefo/ibexQuant"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ibexQuant"]
