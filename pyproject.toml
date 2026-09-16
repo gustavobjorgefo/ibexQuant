@@ -18,10 +18,35 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff", "mypy", "pytest", "pytest-cov"]
+dev = ["ruff", "mypy", "pytest", "pytest-cov", "pre-commit"]
 
 [project.urls]
 Repository = "https://github.com/gustavobjorgefo/ibexQuant"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ibexQuant"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# E/F = pycodestyle + pyflakes (erros e estilo básico, PEP 8)
+# I   = isort (ordem de imports: stdlib → terceiros → internos)
+# UP  = pyupgrade (sintaxe moderna, ex: usar `list[int]` em vez de `List[int]`)
+# B   = bugbear (bugs sutis comuns, ex: mutable default argument)
+# SIM = simplify (simplificações óbvias de código)
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+files = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=src/ibexQuant --cov-report=term-missing"
