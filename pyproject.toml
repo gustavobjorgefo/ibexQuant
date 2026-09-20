@@ -18,7 +18,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff", "mypy", "pytest", "pytest-cov", "pre-commit"]
+dev = ["ruff", "mypy", "pytest", "pytest-cov", "pre-commit", "pandas-stubs"]
+yfinance = ["yfinance>=0.2.51"]
 
 [project.urls]
 Repository = "https://github.com/gustavobjorgefo/ibexQuant"
@@ -42,11 +43,18 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 docstring-code-format = true
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_unused_ignores = true
 files = ["src"]
 
+[[tool.mypy.overrides]]
+module = "yfinance.*"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=src/ibexQuant --cov-report=term-missing"
+addopts = "--cov=src/ibexQuant --cov-report=term-missing --import-mode=importlib"
+markers = [
+    "network: tests that hit an external network resource (e.g. yfinance).",
+]
