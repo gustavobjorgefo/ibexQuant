@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ibexQuant.data.ingestion.provider import OHLCV_FIELDS
+from ibexQuant.data.ingestion.provider import OHLCV_FIELDS, validate_bars_shape
 
 _PRICE_FIELDS: tuple[str, ...] = ("open", "high", "low", "close")
 
@@ -94,7 +94,7 @@ def check_bars(df: pd.DataFrame) -> pd.DataFrame:
     >>> issues[issues.any(axis=1)]  # every row with at least one finding
     >>> issues.sum()  # a count per rule
     """
-    _validate_shape(df)
+    validate_bars_shape(df)
 
     checks: dict[str, pd.Series] = {}
     open_, high, low, close, volume = (
@@ -124,26 +124,3 @@ def check_bars(df: pd.DataFrame) -> pd.DataFrame:
         )
 
     return pd.DataFrame(checks, index=df.index)
-
-
-# --- internal helpers ---
-
-
-def _validate_shape(df: pd.DataFrame) -> None:
-    """
-    Confirm ``df`` is indexed the way every MarketDataProvider promises.
-
-    Raises
-    ------
-    ValueError
-        If the index is not a ``MultiIndex`` named ``(timestamp, symbol)``.
-    """
-    if not isinstance(df.index, pd.MultiIndex) or list(df.index.names) != [
-        "timestamp",
-        "symbol",
-    ]:
-        actual = list(df.index.names) if isinstance(df.index, pd.MultiIndex) else type(df.index)
-        raise ValueError(
-            "check_bars expects a MarketDataProvider-shaped DataFrame indexed by "
-            f"MultiIndex(timestamp, symbol); got {actual!r}."
-        )

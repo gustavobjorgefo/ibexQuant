@@ -56,6 +56,36 @@ DateLike: TypeAlias = str | pd.Timestamp
 OHLCV_FIELDS: Final[tuple[str, ...]] = ("open", "high", "low", "close", "volume")
 
 
+def validate_bars_shape(df: pd.DataFrame) -> None:
+    """
+    Confirm ``df`` is indexed the way every MarketDataProvider promises.
+
+    Shared by any function that consumes MarketDataProvider output and
+    needs to fail fast on a frame that was never shaped by one in the
+    first place — e.g. ``ibexQuant.data.ingestion.validation.check_bars``
+    and ``ibexQuant.data.calendars.calendar.align_to_calendar``.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Frame to check.
+
+    Raises
+    ------
+    ValueError
+        If the index is not a ``MultiIndex`` named ``(timestamp, symbol)``.
+    """
+    if not isinstance(df.index, pd.MultiIndex) or list(df.index.names) != [
+        "timestamp",
+        "symbol",
+    ]:
+        actual = list(df.index.names) if isinstance(df.index, pd.MultiIndex) else type(df.index)
+        raise ValueError(
+            "Expected a MarketDataProvider-shaped DataFrame indexed by "
+            f"MultiIndex(timestamp, symbol); got {actual!r}."
+        )
+
+
 class MarketDataProvider(ABC):
     """
     Abstract source of OHLCV market data.
