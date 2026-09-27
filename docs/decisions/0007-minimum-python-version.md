@@ -26,10 +26,11 @@ The only interpreter actually used by the project is 3.12.
 ## Decision
 
 - The minimum supported version is **Python 3.12**.
-- The three settings that express it must always agree:
+- The settings that express it must always agree:
   - `requires-python = ">=3.12"`
   - `[tool.ruff] target-version = "py312"`
   - `[tool.mypy] python_version = "3.12"`
+  - `python-version: "3.12"` in `.github/workflows/ci.yml`
 
 ## Alternatives considered
 
@@ -46,5 +47,13 @@ The only interpreter actually used by the project is 3.12.
 
 - Python 3.12 syntax (PEP 695 generics and `type` aliases, among others) may
   be used in the codebase.
-- Raising the minimum version again follows the same rule: change the three
+- Raising the minimum version again follows the same rule: change all
   settings together and record it here.
+
+## Amendments
+
+- **2026-09-28** — The CI workflow was missing from the list of settings.
+  It still installed Python 3.11, so dependency resolution failed on the
+  first push after this decision. It now installs 3.12, the minimum
+  supported version, so that CI validates the oldest version where
+  incompatibilities appear first.
