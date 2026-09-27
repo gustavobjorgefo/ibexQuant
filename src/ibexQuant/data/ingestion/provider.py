@@ -46,11 +46,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import Final, TypeAlias
+from typing import Final
 
 import pandas as pd
 
-DateLike: TypeAlias = str | pd.Timestamp
+type DateLike = str | pd.Timestamp
 """A date or timestamp accepted at the provider boundary."""
 
 OHLCV_FIELDS: Final[tuple[str, ...]] = ("open", "high", "low", "close", "volume")

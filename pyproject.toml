@@ -7,18 +7,28 @@ name = "ibexQuant"
 version = "0.1.0"
 description = "Personal quant research and backtesting framework."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [
     { name = "Gustavo de Baccho Jorge Filho", email = "gustavob.jorge@hotmail.com" },
 ]
 dependencies = [
-    "pandas>=2.0",
+    # >= 3.0 is required: Panel's immutability relies on Copy-on-Write being the
+    # default (docs/decisions/0002-panel.md).
+    "pandas>=3.0",
     "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
-dev = ["ruff", "mypy", "pytest", "pytest-cov", "pre-commit", "pandas-stubs"]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "pre-commit",
+    # Stub versions track pandas versions; 2.x stubs describe the pandas 2 API.
+    "pandas-stubs>=3.0",
+]
 yfinance = ["yfinance>=0.2.51"]
 calendar = ["pandas_market_calendars>=5.4.0"]
 
@@ -30,36 +40,41 @@ packages = ["src/ibexQuant"]
 
 [tool.ruff]
 line-length = 99
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-# E/F = pycodestyle + pyflakes (erros e estilo básico, PEP 8)
-# I   = isort (ordem de imports: stdlib → terceiros → internos)
-# UP  = pyupgrade (sintaxe moderna, ex: usar `list[int]` em vez de `List[int]`)
-# B   = bugbear (bugs sutis comuns, ex: mutable default argument)
-# SIM = simplify (simplificações óbvias de código)
+# E/F = pycodestyle + pyflakes: basic errors and PEP 8 style
+# I   = isort: import order (stdlib -> third party -> first party)
+# UP  = pyupgrade: modern syntax (e.g. `list[int]` instead of `List[int]`)
+# B   = bugbear: common subtle bugs (e.g. mutable default arguments)
+# SIM = simplify: obvious code simplifications
+
+[tool.ruff.lint.isort]
+known-first-party = ["ibexQuant"]
 
 [tool.ruff.format]
 docstring-code-format = true
 
 [tool.mypy]
+# Must match the minimum supported version (requires-python), so that
+# features newer than 3.12 are reported instead of silently accepted.
 python_version = "3.12"
 strict = true
-warn_unused_ignores = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = "yfinance.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "pandas_market_calendars.*"
+module = ["yfinance.*", "pandas_market_calendars.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=src/ibexQuant --cov-report=term-missing --import-mode=importlib"
+addopts = [
+    "--strict-markers",
+    "--import-mode=importlib",
+    "--cov=ibexQuant",
+    "--cov-report=term-missing",
+]
 markers = [
     "network: tests that hit an external network resource (e.g. yfinance).",
 ]
