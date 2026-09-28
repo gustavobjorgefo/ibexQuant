@@ -26,8 +26,14 @@ dev = [
     "pytest",
     "pytest-cov",
     "pre-commit",
+    "nbstripout",
     # Stub versions track pandas versions; 2.x stubs describe the pandas 2 API.
     "pandas-stubs>=3.0",
+]
+research = [
+    "ibexQuant[yfinance,calendar]",
+    "jupyterlab",
+    "matplotlib",
 ]
 yfinance = ["yfinance>=0.2.51"]
 calendar = ["pandas_market_calendars>=5.4.0"]

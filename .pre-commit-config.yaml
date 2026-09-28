@@ -4,17 +4,24 @@
 repos:
   - repo: local
     hooks:
+      # Runs first so ruff sees the notebook exactly as it will be committed.
+      - id: nbstripout
+        name: nbstripout
+        entry: nbstripout
+        language: system
+        types: [jupyter]
+        
       - id: ruff
         name: ruff
         entry: ruff check --fix
         language: system
-        types_or: [python, pyi]
+        types_or: [python, pyi, jupyter]
 
       - id: ruff-format
         name: ruff-format
         entry: ruff format
         language: system
-        types_or: [python, pyi]
+        types_or: [python, pyi, jupyter]
 
       - id: mypy
         name: mypy
