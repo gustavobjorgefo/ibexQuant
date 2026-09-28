@@ -21,7 +21,9 @@ from ibexQuant.features.kernels.exponential import (
     alpha_from_span,
     exponential_lookback,
 )
+from ibexQuant.features.kernels.lags import LagState, lag
 from ibexQuant.features.kernels.moving_averages import EmaState, SmaState, ema, sma
+from ibexQuant.features.kernels.normalization import RollingZScoreState, rolling_zscore
 from ibexQuant.features.kernels.returns import (
     LogReturnState,
     SimpleReturnState,
@@ -48,9 +50,11 @@ __all__ = [
     "EwmaVolatilityState",
     "HistoricalVolatilityState",
     "IncrementalState",
+    "LagState",
     "LogReturnState",
     "RollingStdState",
     "RollingSumState",
+    "RollingZScoreState",
     "SimpleReturnState",
     "SmaState",
     "alpha_from_decay",
@@ -60,9 +64,11 @@ __all__ = [
     "ewma_volatility",
     "exponential_lookback",
     "historical_volatility",
+    "lag",
     "log_returns",
     "rolling_std",
     "rolling_sum",
+    "rolling_zscore",
     "simple_returns",
     "sma",
 ]
