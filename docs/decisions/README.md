@@ -16,6 +16,14 @@ does, but *why it is not done differently*.
   - **Superseded by NNNN** — replaced; kept for history, never deleted.
 - A decision is never edited to say something different. To change it,
   write a new record that supersedes the old one.
+- **What deserves a record.** Only decisions whose rationale is not visible
+  in the code: if, months later, someone would ask "why not the simpler
+  alternative?" and the code does not answer, write a record. Conventions
+  that explain themselves belong in docstrings.
+- **At most one record per phase**, grouping that phase's decisions as
+  sections, unless a single decision is large enough to stand alone.
+- Corrections that do not change a decision (e.g. a missing item in a list)
+  are added as a dated **Amendments** section instead of a new record.
 - Individual rules inside a record keep the identifiers used during the
   design discussion (e.g. `A5`, `D0.2a`) so they can be referenced from
   code reviews and docstrings.
@@ -31,6 +39,7 @@ does, but *why it is not done differently*.
 | 0005 | [Adjusted prices and scale invariance](0005-adjusted-prices.md) | Accepted | 0 |
 | 0006 | [Legacy code](0006-legacy-code.md)                        | Accepted | 0     |
 | 0007 | [Minimum Python version](0007-minimum-python-version.md)  | Accepted | 0     |
+| 0008 | [Kernel conventions](0008-kernel-conventions.md)          | Accepted | 1     |
 
 ## Pending items
 
@@ -43,13 +52,14 @@ resolved; when it is, the resolving record is linked here.
 | P2 | `SessionsSinceLastObservation` node, exposing absence to the model (see 0003) | Phase 2 |
 | P3 | Universe module: Ibovespa composition by effective date and point-in-time liquidity filter (see 0004) | After Phase 3 |
 | P4 | Unadjusted prices in `Panel` for features that are not scale invariant (see 0005) | When needed |
+| P5 | Backtest runner loads data from `lookback` sessions before the backtest start, using `FeatureSet.lookback` and the trading calendar (see 0008) | Backtest engine design |
 
 ## Roadmap
 
 | Phase | Scope                                                | Status      |
 |-------|------------------------------------------------------|-------------|
 | 0     | Foundations and contracts                            | Done        |
-| 1     | Kernels (batch + incremental)                        | Not started |
+| 1     | Kernels (batch + incremental)                        | In progress |
 | 2     | `Feature` abstraction and concrete nodes             | Not started |
 | 3     | `FeatureSet`: DAG, batch compute, cache, `to_matrix` | Not started |
 | 4     | Labels with `t1`                                     | Not started |
