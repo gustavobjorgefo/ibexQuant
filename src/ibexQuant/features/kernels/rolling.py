@@ -140,6 +140,10 @@ class RollingStdState(FixedWindowState):
         super().__init__(require_integer("window", window, minimum=self._ddof + 1))
 
     def _compute(self, window: deque[float]) -> float:
+        # fsum(window) / n does not always reproduce a repeated value exactly
+        # (e.g. 0.1), which would leave ~1e-17 of spurious dispersion.
+        if max(window) == min(window):
+            return 0.0
         # Two-pass algorithm: exact mean first, then squared deviations, which
         # avoids the cancellation of the naive sum-of-squares formula.
         mean: float = math.fsum(window) / len(window)

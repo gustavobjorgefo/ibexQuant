@@ -114,10 +114,15 @@ def test_rolling_sum_of_log_returns_is_the_window_log_return() -> None:
     assert momentum == pytest.approx(math.log(13.0 / 11.0))
 
 
-def test_constant_window_has_zero_std() -> None:
-    result = rolling_std(make_frame({"A": [1.1] * 6}), window=3)["A"]
+@pytest.mark.parametrize("value", [1.1, 0.1, 0.7])
+def test_constant_window_has_zero_std(value: float) -> None:
+    # fsum([0.1] * 3) / 3 is not exactly 0.1; the state must still return 0.
+    result = rolling_std(make_frame({"A": [value] * 6}), window=3)["A"]
+    state = RollingStdState(3)
+    streamed = [state.update(value) for _ in range(6)]
 
     assert (result.iloc[2:] == 0.0).all()
+    assert streamed[2:] == [0.0] * 4
 
 
 # --- Validation ---

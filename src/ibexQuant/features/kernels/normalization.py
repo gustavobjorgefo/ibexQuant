@@ -73,8 +73,10 @@ def rolling_zscore(values: pd.DataFrame, window: int, ddof: int = 1) -> pd.DataF
 
     def compute(block: pd.DataFrame) -> pd.DataFrame:
         rolling = block.rolling(window, min_periods=window)
-        deviation: pd.DataFrame = rolling.std(ddof=ddof)
-        return (block - rolling.mean()) / deviation.where(deviation > 0.0)
+        # Zero dispersion is detected exactly (all values equal) rather than
+        # through the computed deviation, which may carry ~1e-17 of noise.
+        dispersed: pd.DataFrame = rolling.max() > rolling.min()
+        return (block - rolling.mean()) / rolling.std(ddof=ddof).where(dispersed)
 
     return in_observation_time(values, compute)
 
@@ -107,9 +109,12 @@ class RollingZScoreState(FixedWindowState):
         super().__init__(require_integer("window", window, minimum=max(2, self._ddof + 1)))
 
     def _compute(self, window: deque[float]) -> float:
+        # Zero dispersion is detected exactly: fsum(window) / n does not always
+        # reproduce a repeated value (e.g. 0.1), leaving ~1e-17 of spurious
+        # deviation that would turn a constant window into a z-score of +-0.8.
+        if max(window) == min(window):
+            return math.nan
         mean: float = math.fsum(window) / len(window)
         squared_deviations: float = math.fsum((value - mean) ** 2 for value in window)
         deviation: float = math.sqrt(squared_deviations / (len(window) - self._ddof))
-        if deviation == 0.0:
-            return math.nan
         return (window[-1] - mean) / deviation
