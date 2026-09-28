@@ -59,7 +59,7 @@ resolved; when it is, the resolving record is linked here.
 | Phase | Scope                                                | Status      |
 |-------|------------------------------------------------------|-------------|
 | 0     | Foundations and contracts                            | Done        |
-| 1     | Kernels (batch + incremental)                        | In progress |
+| 1     | Kernels (batch + incremental)                        | Done        |
 | 2     | `Feature` abstraction and concrete nodes             | Not started |
 | 3     | `FeatureSet`: DAG, batch compute, cache, `to_matrix` | Not started |
 | 4     | Labels with `t1`                                     | Not started |

@@ -14,6 +14,7 @@ documented in each docstring.
 
 from __future__ import annotations
 
+from ibexQuant.features.kernels.cross_sectional import cs_rank, cs_zscore
 from ibexQuant.features.kernels.exponential import (
     DEFAULT_EXPONENTIAL_TOLERANCE,
     alpha_from_decay,
@@ -60,6 +61,8 @@ __all__ = [
     "alpha_from_decay",
     "alpha_from_halflife",
     "alpha_from_span",
+    "cs_rank",
+    "cs_zscore",
     "ema",
     "ewma_volatility",
     "exponential_lookback",

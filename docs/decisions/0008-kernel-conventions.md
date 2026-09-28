@@ -167,3 +167,15 @@ graph (`FeatureStream`) waits for Phase 7.
   sums close to zero, such as rolling sums of returns, where a purely
   relative tolerance fails. Convention errors — `ddof`, `adjust`, window
   alignment — are orders of magnitude larger and still fail the test.
+- **2026-09-28** — Cross-sectional kernels have no incremental states. A
+  cross-sectional value at *t* depends only on row *t*: there is no past to
+  keep and the lookback is zero, so the incremental counterpart is the
+  kernel itself applied to a one-row DataFrame. D1.11 applies to
+  time-series kernels only. Parity is tested by requiring row-by-row
+  application to equal whole-frame application.
+- **2026-09-28** — `cs_rank` is normalized as `(rank - 1) / (n - 1)` instead
+  of pandas' `pct=True` (`rank / n`), which was planned at first. With
+  `rank / n` the median asset scores 0.67 among 3 assets and ~0.5 among 100,
+  so the same asset's value would drift with the universe size, which
+  changes over time through the universe mask. With `(rank - 1) / (n - 1)`
+  the lowest asset is always 0, the highest 1 and the median 0.5.
