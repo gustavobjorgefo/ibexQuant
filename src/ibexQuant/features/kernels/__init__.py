@@ -21,11 +21,36 @@ from ibexQuant.features.kernels.exponential import (
     alpha_from_span,
     exponential_lookback,
 )
+from ibexQuant.features.kernels.moving_averages import SmaState, sma
+from ibexQuant.features.kernels.returns import (
+    LogReturnState,
+    SimpleReturnState,
+    log_returns,
+    simple_returns,
+)
+from ibexQuant.features.kernels.rolling import (
+    RollingStdState,
+    RollingSumState,
+    rolling_std,
+    rolling_sum,
+)
+from ibexQuant.features.kernels.state import IncrementalState
 
 __all__ = [
     "DEFAULT_EXPONENTIAL_TOLERANCE",
+    "IncrementalState",
+    "LogReturnState",
+    "RollingStdState",
+    "RollingSumState",
+    "SimpleReturnState",
+    "SmaState",
     "alpha_from_decay",
     "alpha_from_halflife",
     "alpha_from_span",
     "exponential_lookback",
+    "log_returns",
+    "rolling_std",
+    "rolling_sum",
+    "simple_returns",
+    "sma",
 ]

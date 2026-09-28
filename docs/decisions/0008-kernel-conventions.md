@@ -155,3 +155,15 @@ graph (`FeatureStream`) waits for Phase 7.
   EMA at the default tolerance).
 - The backtest runner must load data starting `lookback` sessions before the
   backtest start — pending item **P5**.
+
+## Amendments
+
+- **2026-09-28** — "Match batch exactly" in the parity consequence of D1.6
+  means agreement within numerical tolerance: `rtol = 1e-9`,
+  `atol = 1e-12`. pandas rolling kernels maintain running sums online,
+  while incremental states recompute each window exactly (two-pass for the
+  standard deviation). On realistic data they differ by up to ~1e-10
+  relative (rolling standard deviation of prices), and by ~1e-16 absolute on
+  sums close to zero, such as rolling sums of returns, where a purely
+  relative tolerance fails. Convention errors — `ddof`, `adjust`, window
+  alignment — are orders of magnitude larger and still fail the test.
