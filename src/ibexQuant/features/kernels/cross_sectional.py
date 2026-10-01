@@ -36,7 +36,8 @@ from typing import Final
 
 import pandas as pd
 
-from ibexQuant.features.kernels._validation import require_frame, require_integer, require_mask
+from ibexQuant._validation import require_integer
+from ibexQuant.features.kernels._validation import require_frame, require_mask
 
 MINIMUM_ASSETS: Final[int] = 2
 

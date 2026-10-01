@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from typing import Final
 
-from ibexQuant.features.kernels._validation import require_real
+from ibexQuant._validation import require_real
 
 DEFAULT_EXPONENTIAL_TOLERANCE: Final[float] = 1e-3
 

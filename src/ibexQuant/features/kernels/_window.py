@@ -18,7 +18,7 @@ import math
 from abc import abstractmethod
 from collections import deque
 
-from ibexQuant.features.kernels._validation import require_integer
+from ibexQuant._validation import require_integer
 from ibexQuant.features.kernels.state import IncrementalState
 
 

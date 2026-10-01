@@ -25,8 +25,9 @@ from collections import deque
 
 import pandas as pd
 
+from ibexQuant._validation import require_integer
 from ibexQuant.features.kernels._observation_time import in_observation_time
-from ibexQuant.features.kernels._validation import require_frame, require_integer
+from ibexQuant.features.kernels._validation import require_frame
 from ibexQuant.features.kernels._window import FixedWindowState
 from ibexQuant.features.kernels.exponential import (
     DEFAULT_EXPONENTIAL_TOLERANCE,
