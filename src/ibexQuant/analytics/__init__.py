@@ -12,6 +12,17 @@ on pandas and NumPy, so any consumer can use them without plotting libraries.
 
 from __future__ import annotations
 
+from ibexQuant.analytics.metrics import (
+    B3_SESSIONS_PER_YEAR,
+    annualized_volatility,
+    cagr,
+    calmar_ratio,
+    max_drawdown,
+    max_drawdown_duration,
+    sharpe_ratio,
+    sortino_ratio,
+    total_return,
+)
 from ibexQuant.analytics.returns import (
     Period,
     cumulative_returns,
@@ -25,13 +36,22 @@ from ibexQuant.analytics.returns import (
 )
 
 __all__ = [
+    "B3_SESSIONS_PER_YEAR",
     "Period",
+    "annualized_volatility",
+    "cagr",
+    "calmar_ratio",
     "cumulative_returns",
     "drawdown",
     "drawdown_periods",
     "equity_curve",
     "excess_returns",
+    "max_drawdown",
+    "max_drawdown_duration",
     "monthly_returns_table",
     "period_returns",
     "returns_from_equity",
+    "sharpe_ratio",
+    "sortino_ratio",
+    "total_return",
 ]
