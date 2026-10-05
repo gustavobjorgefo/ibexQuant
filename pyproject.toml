@@ -21,6 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "scipy",
     "ruff",
     "mypy",
     "pytest",
@@ -72,7 +73,7 @@ strict = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["yfinance.*", "pandas_market_calendars.*", "empyrical.*"]
+module = ["yfinance.*", "pandas_market_calendars.*", "empyrical.*", "scipy.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

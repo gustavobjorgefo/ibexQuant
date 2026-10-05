@@ -46,14 +46,16 @@ implemented after this one).
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from typing import Final, overload
 
 import pandas as pd
 
 from ibexQuant._validation import require_integer
-from ibexQuant.analytics._types import ReturnsT
-from ibexQuant.analytics._validation import require_returns
+from ibexQuant.analytics._reduce import (
+    reduce_per_series,
+    safe_ratio,
+    sample_standard_deviation,
+)
 from ibexQuant.analytics.returns import (
     cumulative_returns,
     drawdown,
@@ -90,7 +92,7 @@ def total_return(returns: pd.Series | pd.DataFrame) -> float | pd.Series:
     TypeError, ValueError
         If *returns* breaks the analytics contract or is empty.
     """
-    return _per_series(returns, lambda series: float(cumulative_returns(series).iloc[-1]))
+    return reduce_per_series(returns, lambda series: float(cumulative_returns(series).iloc[-1]))
 
 
 @overload
@@ -130,7 +132,7 @@ def cagr(returns: pd.Series | pd.DataFrame, *, periods_per_year: int) -> float |
         growth = 1.0 + float(cumulative_returns(series).iloc[-1])
         return float(growth ** (periods_per_year / len(series))) - 1.0
 
-    return _per_series(returns, statistic)
+    return reduce_per_series(returns, statistic)
 
 
 # --- Risk ---
@@ -168,7 +170,7 @@ def annualized_volatility(
     """
     periods_per_year = require_integer("periods_per_year", periods_per_year, minimum=1)
     scale = math.sqrt(periods_per_year)
-    return _per_series(returns, lambda series: _standard_deviation(series) * scale)
+    return reduce_per_series(returns, lambda series: sample_standard_deviation(series) * scale)
 
 
 @overload
@@ -196,7 +198,7 @@ def max_drawdown(returns: pd.Series | pd.DataFrame) -> float | pd.Series:
     TypeError, ValueError
         If *returns* breaks the analytics contract or is empty.
     """
-    return _per_series(returns, lambda series: float(drawdown(series).min()))
+    return reduce_per_series(returns, lambda series: float(drawdown(series).min()))
 
 
 @overload
@@ -230,7 +232,7 @@ def max_drawdown_duration(returns: pd.Series | pd.DataFrame) -> float | pd.Serie
         durations = drawdown_periods(series)["duration"]
         return float(durations.max()) if len(durations) else 0.0
 
-    return _per_series(returns, statistic)
+    return reduce_per_series(returns, statistic)
 
 
 # --- Risk-adjusted ---
@@ -283,9 +285,9 @@ def sharpe_ratio(
 
     def statistic(series: pd.Series) -> float:
         excess = excess_returns(series, risk_free, periods_per_year=periods_per_year)
-        return _ratio(float(excess.mean()), _standard_deviation(excess)) * scale
+        return safe_ratio(float(excess.mean()), sample_standard_deviation(excess)) * scale
 
-    return _per_series(returns, statistic)
+    return reduce_per_series(returns, statistic)
 
 
 @overload
@@ -338,9 +340,9 @@ def sortino_ratio(
     def statistic(series: pd.Series) -> float:
         excess = excess_returns(series, risk_free, periods_per_year=periods_per_year)
         downside = math.sqrt(float((excess.clip(upper=0.0) ** 2).mean()))
-        return _ratio(float(excess.mean()), downside) * scale
+        return safe_ratio(float(excess.mean()), downside) * scale
 
-    return _per_series(returns, statistic)
+    return reduce_per_series(returns, statistic)
 
 
 @overload
@@ -374,51 +376,6 @@ def calmar_ratio(returns: pd.Series | pd.DataFrame, *, periods_per_year: int) ->
 
     def statistic(series: pd.Series) -> float:
         growth_rate = cagr(series, periods_per_year=periods_per_year)
-        return _ratio(growth_rate, abs(max_drawdown(series)))
+        return safe_ratio(growth_rate, abs(max_drawdown(series)))
 
-    return _per_series(returns, statistic)
-
-
-# --- Helpers ---
-
-
-def _per_series(
-    returns: pd.Series | pd.DataFrame, statistic: Callable[[pd.Series], float]
-) -> float | pd.Series:
-    """Apply *statistic* to each series over its observed period."""
-    # Validation guarantees NaN only at the edges, so dropna just trims them.
-    if isinstance(returns, pd.Series):
-        series = _require_observations(require_returns(returns))
-        return statistic(series.dropna())
-
-    # Anything that is not a Series is validated here, so non-pandas input
-    # still gets a TypeError.
-    frame = _require_observations(require_returns(returns))
-    values = [statistic(column.dropna()) for _, column in frame.items()]
-    return pd.Series(values, index=frame.columns, dtype="float64")
-
-
-def _require_observations(returns: ReturnsT) -> ReturnsT:
-    """Reject empty input: a metric of nothing signals a bug upstream."""
-    if returns.empty:
-        raise ValueError("returns must have at least one observation.")
-    return returns
-
-
-def _standard_deviation(values: pd.Series) -> float:
-    """Sample standard deviation, exactly zero for constant values."""
-    if len(values) < 2:
-        return math.nan
-    # The mean of a repeated value is not always that value in floating point
-    # (e.g. 0.1), which would leave ~1e-17 of spurious dispersion and turn a
-    # ratio over zero risk into a huge number instead of NaN.
-    if values.max() == values.min():
-        return 0.0
-    return float(values.std(ddof=1))
-
-
-def _ratio(numerator: float, denominator: float) -> float:
-    """``numerator / denominator``, NaN when the denominator is zero or NaN."""
-    if math.isnan(denominator) or denominator == 0.0:
-        return math.nan
-    return numerator / denominator
+    return reduce_per_series(returns, statistic)
