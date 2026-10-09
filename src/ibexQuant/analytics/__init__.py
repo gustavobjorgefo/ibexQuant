@@ -1,13 +1,17 @@
 # ibexQuant\src\ibexQuant\analytics\__init__.py
 
 """
-Performance analytics: numbers derived from the returns of a strategy.
+Performance analytics: numbers derived from the results of a strategy.
 
-Every function consumes periodic simple returns, as a ``pd.Series`` or a
-``pd.DataFrame`` with one column per series (e.g. strategy and benchmark), and
-returns the same shape it received. Analytics never produce returns (the
-backtest's job) and never draw (:mod:`ibexQuant.plotting`); they depend only
-on pandas and NumPy, so any consumer can use them without plotting libraries.
+Return analytics (``returns``, ``metrics``, ``distribution``) consume
+periodic simple returns, as a ``pd.Series`` or a ``pd.DataFrame`` with one
+column per series (e.g. strategy and benchmark). Trade analytics (``trades``)
+consume one result per round-trip trade, plus the entry and exit times for
+timing metrics.
+
+Analytics never produce returns or trades (the backtest's job) and never draw
+(:mod:`ibexQuant.plotting`); they depend only on pandas and NumPy, so any
+consumer can use them without plotting libraries.
 """
 
 from __future__ import annotations
@@ -47,12 +51,37 @@ from ibexQuant.analytics.returns import (
     period_returns,
     returns_from_equity,
 )
+from ibexQuant.analytics.trades import (
+    average_holding_period,
+    average_loss,
+    average_win,
+    best_trade,
+    expectancy,
+    expectancy_t_stat,
+    exposure,
+    gross_loss,
+    gross_profit,
+    loss_rate,
+    max_consecutive_losses,
+    max_consecutive_wins,
+    payoff_ratio,
+    profit_factor,
+    trade_count,
+    trade_frequency,
+    trade_standard_deviation,
+    win_rate,
+    worst_trade,
+)
 
 __all__ = [
     "B3_SESSIONS_PER_YEAR",
     "Period",
     "annualized_volatility",
+    "average_holding_period",
+    "average_loss",
+    "average_win",
     "best_period",
+    "best_trade",
     "cagr",
     "calmar_ratio",
     "conditional_value_at_risk",
@@ -61,14 +90,24 @@ __all__ = [
     "drawdown_periods",
     "equity_curve",
     "excess_returns",
+    "expectancy",
+    "expectancy_t_stat",
+    "exposure",
+    "gross_loss",
+    "gross_profit",
     "kurtosis",
+    "loss_rate",
+    "max_consecutive_losses",
+    "max_consecutive_wins",
     "max_drawdown",
     "max_drawdown_duration",
     "mean_return",
     "monthly_returns_table",
     "negative_ratio",
+    "payoff_ratio",
     "period_returns",
     "positive_ratio",
+    "profit_factor",
     "quantile",
     "returns_from_equity",
     "sharpe_ratio",
@@ -76,6 +115,11 @@ __all__ = [
     "sortino_ratio",
     "standard_deviation",
     "total_return",
+    "trade_count",
+    "trade_frequency",
+    "trade_standard_deviation",
     "value_at_risk",
+    "win_rate",
     "worst_period",
+    "worst_trade",
 ]

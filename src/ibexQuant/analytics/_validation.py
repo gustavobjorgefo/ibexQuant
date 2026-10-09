@@ -18,6 +18,11 @@ strategy is never "unobservable" mid-history, since out of the market it
 earns cash, so a hole means a bug upstream, and filling it with zero would
 hide the bug.
 
+Trade analytics have their own inputs, validated here too: a series of
+per-trade results (:func:`require_trade_results`), a table of trades with
+entry and exit times (:func:`require_trades`), and the sessions of the
+period they belong to (:func:`require_sessions`).
+
 What does not belong here
 -------------------------
 Scalar parameter rules (integers, reals), shared across packages in
@@ -37,6 +42,9 @@ from ibexQuant.analytics._types import ReturnsT
 # Below -100% the value of a position would be negative and compounding
 # breaks; exactly -100% (total loss) is a legitimate return.
 MINIMUM_RETURN: Final[float] = -1.0
+
+# Columns a trades table must have; any other column is ignored.
+TRADE_TIME_COLUMNS: Final[tuple[str, str]] = ("entry_time", "exit_time")
 
 
 def require_returns(returns: ReturnsT, *, name: str = "returns") -> ReturnsT:
@@ -124,6 +132,126 @@ def require_series(values: object, *, name: str) -> pd.Series:
     if not isinstance(values, pd.Series):
         raise TypeError(f"{name} must be a pd.Series, got {type(values)!r}.")
     return values
+
+
+# --- Trades ---
+
+
+def require_trade_results(results: object, *, name: str = "trade_results") -> pd.Series:
+    """
+    Require per-trade results: one finite number per trade.
+
+    The values may be returns or PnL; the order of the series is the
+    chronological order of the trades, and the index is free (exit times,
+    a counter, or repeated timestamps for trades closed together).
+
+    Parameters
+    ----------
+    results : object
+        Candidate results.
+    name : str, default "trade_results"
+        Name used in error messages.
+
+    Returns
+    -------
+    pd.Series
+        *results*, unchanged. May be empty: a period without trades is a
+        legitimate outcome.
+
+    Raises
+    ------
+    TypeError
+        If *results* is not a numeric Series.
+    ValueError
+        If any value is missing or infinite.
+    """
+    series = require_series(results, name=name)
+    if not pd.api.types.is_numeric_dtype(series.dtype) or pd.api.types.is_bool_dtype(series.dtype):
+        raise TypeError(f"{name} must be numeric, got dtype {series.dtype}.")
+
+    values = series.to_numpy(dtype=float)
+    if np.isnan(values).any():
+        raise ValueError(f"{name} must not contain missing values: every trade has a result.")
+    if np.isinf(values).any():
+        raise ValueError(f"{name} must be finite; found an infinite value.")
+    return series
+
+
+def require_trades(trades: object, *, name: str = "trades") -> pd.DataFrame:
+    """
+    Require a table of trades with entry and exit times.
+
+    Parameters
+    ----------
+    trades : object
+        Candidate table, one row per trade, with datetime columns
+        ``entry_time`` and ``exit_time``. Other columns are ignored.
+    name : str, default "trades"
+        Name used in error messages.
+
+    Returns
+    -------
+    pd.DataFrame
+        *trades*, unchanged. May be empty.
+
+    Raises
+    ------
+    TypeError
+        If *trades* is not a DataFrame or a time column is not datetime.
+    ValueError
+        If a time column is missing, has missing values, or a trade exits
+        before it enters.
+    """
+    if not isinstance(trades, pd.DataFrame):
+        raise TypeError(f"{name} must be a pd.DataFrame, got {type(trades)!r}.")
+
+    missing = [column for column in TRADE_TIME_COLUMNS if column not in trades.columns]
+    if missing:
+        raise ValueError(f"{name} is missing required column(s) {missing}.")
+
+    for column in TRADE_TIME_COLUMNS:
+        if not pd.api.types.is_datetime64_any_dtype(trades[column]):
+            raise TypeError(
+                f"{name} column {column!r} must be datetime, got {trades[column].dtype}."
+            )
+        if trades[column].isna().any():
+            raise ValueError(f"{name} column {column!r} must not contain missing values.")
+
+    if (trades["exit_time"] < trades["entry_time"]).any():
+        raise ValueError(f"{name} has a trade whose exit_time precedes its entry_time.")
+    return trades
+
+
+def require_sessions(sessions: object, *, name: str = "sessions") -> pd.DatetimeIndex:
+    """
+    Require the sessions of a period: a non-empty, strictly increasing index.
+
+    Parameters
+    ----------
+    sessions : object
+        Candidate sessions, e.g. the index of a daily return series.
+    name : str, default "sessions"
+        Name used in error messages.
+
+    Returns
+    -------
+    pd.DatetimeIndex
+        *sessions*, unchanged.
+
+    Raises
+    ------
+    TypeError
+        If *sessions* is not a DatetimeIndex.
+    ValueError
+        If it is empty or not strictly increasing.
+    """
+    if not isinstance(sessions, pd.DatetimeIndex):
+        raise TypeError(f"{name} must be a pd.DatetimeIndex, got {type(sessions)!r}.")
+    if sessions.empty:
+        raise ValueError(f"{name} must contain at least one session.")
+    if not (sessions.is_monotonic_increasing and sessions.is_unique):
+        raise ValueError(f"{name} must be strictly increasing (sorted, no duplicates).")
+    return sessions
 
 
 # --- Structural checks ---

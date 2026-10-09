@@ -10,7 +10,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ibexQuant.analytics._validation import require_equity, require_returns, require_series
+from ibexQuant.analytics._validation import (
+    require_equity,
+    require_returns,
+    require_series,
+    require_sessions,
+    require_trades,
+)
 
 NAN: Final[float] = np.nan
 SESSIONS: Final[pd.DatetimeIndex] = pd.bdate_range("2024-01-01", periods=4)
@@ -160,3 +166,76 @@ def test_require_series_returns_the_same_series() -> None:
 def test_require_series_rejects_dataframes() -> None:
     with pytest.raises(TypeError, match="returns must be a pd.Series"):
         require_series(pd.DataFrame({"a": [0.01]}), name="returns")
+
+
+# --- Trades table ---
+
+
+def make_trades() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "entry_time": pd.to_datetime(["2024-01-01", "2024-01-03"]),
+            "exit_time": pd.to_datetime(["2024-01-02", "2024-01-03"]),
+        }
+    )
+
+
+def test_require_trades_returns_the_same_table() -> None:
+    trades = make_trades()
+
+    assert require_trades(trades) is trades
+
+
+def test_require_trades_rejects_non_dataframes() -> None:
+    with pytest.raises(TypeError, match="pd.DataFrame"):
+        require_trades(make_trades()["entry_time"])
+
+
+def test_require_trades_names_missing_columns() -> None:
+    with pytest.raises(ValueError, match=r"missing required column\(s\) \['exit_time'\]"):
+        require_trades(make_trades().drop(columns="exit_time"))
+
+
+def test_require_trades_rejects_non_datetime_columns() -> None:
+    trades = make_trades().assign(entry_time=["2024-01-01", "2024-01-03"])
+
+    with pytest.raises(TypeError, match="'entry_time' must be datetime"):
+        require_trades(trades)
+
+
+def test_require_trades_rejects_missing_times() -> None:
+    trades = make_trades()
+    trades.loc[1, "exit_time"] = pd.NaT
+
+    with pytest.raises(ValueError, match="'exit_time' must not contain missing"):
+        require_trades(trades)
+
+
+def test_require_trades_rejects_exit_before_entry() -> None:
+    trades = make_trades()
+    trades.loc[0, "exit_time"] = pd.Timestamp("2023-12-29")
+
+    with pytest.raises(ValueError, match="exit_time precedes its entry_time"):
+        require_trades(trades)
+
+
+# --- Sessions ---
+
+
+def test_require_sessions_returns_the_same_index() -> None:
+    assert require_sessions(SESSIONS) is SESSIONS
+
+
+def test_require_sessions_rejects_other_types() -> None:
+    with pytest.raises(TypeError, match="pd.DatetimeIndex"):
+        require_sessions(list(SESSIONS))
+
+
+def test_require_sessions_rejects_empty_index() -> None:
+    with pytest.raises(ValueError, match="at least one session"):
+        require_sessions(pd.DatetimeIndex([]))
+
+
+def test_require_sessions_rejects_unsorted_index() -> None:
+    with pytest.raises(ValueError, match="strictly increasing"):
+        require_sessions(SESSIONS[::-1])
