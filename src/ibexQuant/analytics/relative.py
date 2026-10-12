@@ -62,7 +62,7 @@ from ibexQuant.analytics._reduce import (
     sample_standard_deviation,
 )
 from ibexQuant.analytics._types import ReturnsT
-from ibexQuant.analytics._validation import require_returns, require_series
+from ibexQuant.analytics._validation import require_benchmark
 from ibexQuant.analytics.metrics import cagr
 from ibexQuant.analytics.returns import excess_returns
 
@@ -94,7 +94,7 @@ def active_returns(returns: ReturnsT, benchmark: pd.Series) -> ReturnsT:
         If either input breaks the analytics contract, the indexes differ, or
         a strategy never overlaps the benchmark.
     """
-    benchmark = _require_benchmark(returns, benchmark)
+    benchmark = require_benchmark(returns, benchmark)
     frame = returns.to_frame() if isinstance(returns, pd.Series) else returns
     for _, column in frame.items():
         _paired(column, benchmark)
@@ -505,28 +505,11 @@ def excess_cagr(
 # --- Helpers ---
 
 
-def _require_benchmark(returns: pd.Series | pd.DataFrame, benchmark: object) -> pd.Series:
-    """Validate the benchmark and require the exact index of *returns*."""
-    # Branching keeps each call on one concrete type; anything that is not a
-    # Series is validated as a DataFrame and rejected there.
-    index = (
-        require_returns(returns).index
-        if isinstance(returns, pd.Series)
-        else require_returns(returns).index
-    )
-    market = require_returns(require_series(benchmark, name="benchmark"), name="benchmark")
-    if not market.index.equals(index):
-        raise ValueError(
-            "benchmark must have exactly the same index as returns (same dates, same order)."
-        )
-    return market
-
-
 def _reduce_against(
     returns: pd.Series | pd.DataFrame, benchmark: pd.Series, statistic: PairStatistic
 ) -> float | pd.Series:
     """Apply *statistic* to each strategy and the benchmark over their common periods."""
-    market = _require_benchmark(returns, benchmark)
+    market = require_benchmark(returns, benchmark)
 
     def against_benchmark(strategy: pd.Series) -> float:
         return statistic(*_paired(strategy, market))

@@ -62,6 +62,14 @@ from ibexQuant.analytics.returns import (
     period_returns,
     returns_from_equity,
 )
+from ibexQuant.analytics.rolling import (
+    rolling_beta,
+    rolling_correlation,
+    rolling_return,
+    rolling_sharpe,
+    rolling_sortino,
+    rolling_volatility,
+)
 from ibexQuant.analytics.trades import (
     average_holding_period,
     average_loss,
@@ -128,6 +136,12 @@ __all__ = [
     "profit_factor",
     "quantile",
     "returns_from_equity",
+    "rolling_beta",
+    "rolling_correlation",
+    "rolling_return",
+    "rolling_sharpe",
+    "rolling_sortino",
+    "rolling_volatility",
     "sharpe_ratio",
     "skewness",
     "sortino_ratio",

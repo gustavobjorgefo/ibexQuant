@@ -32,6 +32,8 @@ dev = [
     "pandas-stubs>=3.0",
     # Reference implementation for analytics parity tests; never imported by src.
     "empyrical-reloaded",
+    # Imported by empyrical without being declared; pandas 3 no longer brings it.
+    "pytz",
 ]
 research = [
     "ibexQuant[yfinance,calendar]",

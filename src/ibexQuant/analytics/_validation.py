@@ -134,6 +134,67 @@ def require_series(values: object, *, name: str) -> pd.Series:
     return values
 
 
+def require_observations(returns: ReturnsT) -> ReturnsT:
+    """
+    Reject empty input: a metric of nothing signals a bug upstream.
+
+    Parameters
+    ----------
+    returns : pd.Series or pd.DataFrame
+        Validated returns.
+
+    Returns
+    -------
+    pd.Series or pd.DataFrame
+        *returns*, unchanged.
+
+    Raises
+    ------
+    ValueError
+        If *returns* has no rows.
+    """
+    if returns.empty:
+        raise ValueError("returns must have at least one observation.")
+    return returns
+
+
+def require_benchmark(returns: pd.Series | pd.DataFrame, benchmark: object) -> pd.Series:
+    """
+    Require benchmark returns on exactly the same index as *returns*.
+
+    Parameters
+    ----------
+    returns : pd.Series or pd.DataFrame
+        Returns of one or more strategies; validated here too.
+    benchmark : object
+        Candidate benchmark returns.
+
+    Returns
+    -------
+    pd.Series
+        *benchmark*, unchanged.
+
+    Raises
+    ------
+    TypeError, ValueError
+        If either input breaks the analytics contract, or the indexes differ
+        in dates or order.
+    """
+    # Branching keeps each call on one concrete type; anything that is not a
+    # Series is validated as a DataFrame and rejected there.
+    index = (
+        require_returns(returns).index
+        if isinstance(returns, pd.Series)
+        else require_returns(returns).index
+    )
+    market = require_returns(require_series(benchmark, name="benchmark"), name="benchmark")
+    if not market.index.equals(index):
+        raise ValueError(
+            "benchmark must have exactly the same index as returns (same dates, same order)."
+        )
+    return market
+
+
 # --- Trades ---
 
 

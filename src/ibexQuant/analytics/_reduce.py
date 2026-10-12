@@ -26,8 +26,7 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from ibexQuant.analytics._types import ReturnsT
-from ibexQuant.analytics._validation import require_returns
+from ibexQuant.analytics._validation import require_observations, require_returns
 
 
 def reduce_per_series(
@@ -55,12 +54,12 @@ def reduce_per_series(
     """
     # Validation guarantees NaN only at the edges, so dropna just trims them.
     if isinstance(returns, pd.Series):
-        series = _require_observations(require_returns(returns))
+        series = require_observations(require_returns(returns))
         return statistic(series.dropna())
 
     # Anything that is not a Series is validated here, so non-pandas input
     # still gets a TypeError.
-    frame = _require_observations(require_returns(returns))
+    frame = require_observations(require_returns(returns))
     values = [statistic(column.dropna()) for _, column in frame.items()]
     return pd.Series(values, index=frame.columns, dtype="float64")
 
@@ -99,10 +98,3 @@ def safe_ratio(numerator: float, denominator: float) -> float:
     if math.isnan(denominator) or denominator == 0.0:
         return math.nan
     return numerator / denominator
-
-
-def _require_observations(returns: ReturnsT) -> ReturnsT:
-    """Reject empty input: a statistic of nothing signals a bug upstream."""
-    if returns.empty:
-        raise ValueError("returns must have at least one observation.")
-    return returns
