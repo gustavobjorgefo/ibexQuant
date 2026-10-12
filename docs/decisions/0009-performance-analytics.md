@@ -270,3 +270,31 @@ with a house identity.
 - The modules still to come in this track (`relative`, `rolling`,
   `summary`) apply these conventions; a decision that is genuinely new there
   gets its own record.
+
+## Amendments
+
+- **2026-10-12** — Decisions taken while completing the analytics modules,
+  recorded here rather than in separate records because each one applies
+  this record's conventions to a new module:
+  - **Benchmark alignment** (`relative`, `rolling`). The benchmark must
+    share the exact index of the returns, date for date; any difference
+    raises. Edge `NaN` remains allowed on both sides (AN3), and metrics use
+    the rows where both are observed. Silently intersecting indexes would
+    accept a benchmark with holes and compute beta over rows nobody chose.
+  - **Rolling metrics are ex post** (`rolling`). They describe a strategy
+    and never feed a trading decision: a rolling quantity used as a signal
+    (e.g. trading only above a rolling Sharpe threshold) is a feature node,
+    updated bar by bar in live trading. The duplicated rolling computation
+    in kernels and analytics is deliberate; a test ties the two volatilities
+    together on gap-free returns.
+  - **Summaries compare over the common period** (`summary`). Each analytics
+    function measures every column over its own period (AN2), but a
+    comparison table side by side must not: by default `performance_summary`
+    uses the period where every column and the benchmark are observed, and
+    records the period it used.
+  - **No annualized returns below one year** (`summary`). Following GIPS,
+    CAGR, excess CAGR and Calmar are `NaN` in the summary for a column with
+    fewer than `periods_per_year` observations, and the text output says so.
+    This settles where short samples are flagged (AN4). Volatility and
+    Sharpe remain annualized, since that rescales rather than extrapolates a
+    return. The analytics functions themselves still impose no minimum.

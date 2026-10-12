@@ -70,6 +70,14 @@ from ibexQuant.analytics.rolling import (
     rolling_sortino,
     rolling_volatility,
 )
+from ibexQuant.analytics.summary import (
+    METRIC_UNITS,
+    MetricUnit,
+    PerformanceSummary,
+    TradeSummary,
+    performance_summary,
+    trade_summary,
+)
 from ibexQuant.analytics.trades import (
     average_holding_period,
     average_loss,
@@ -94,7 +102,11 @@ from ibexQuant.analytics.trades import (
 
 __all__ = [
     "B3_SESSIONS_PER_YEAR",
+    "METRIC_UNITS",
+    "MetricUnit",
+    "PerformanceSummary",
     "Period",
+    "TradeSummary",
     "active_returns",
     "alpha",
     "annualized_volatility",
@@ -131,6 +143,7 @@ __all__ = [
     "monthly_returns_table",
     "negative_ratio",
     "payoff_ratio",
+    "performance_summary",
     "period_returns",
     "positive_ratio",
     "profit_factor",
@@ -151,6 +164,7 @@ __all__ = [
     "trade_count",
     "trade_frequency",
     "trade_standard_deviation",
+    "trade_summary",
     "up_capture",
     "value_at_risk",
     "win_rate",

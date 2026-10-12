@@ -80,7 +80,7 @@ to charts and reports (see 0009). Neither track depends on the other.
 
 | Part      | Scope                                                        | Status      |
 |-----------|--------------------------------------------------------------|-------------|
-| Analytics | Returns, metrics, distribution, trades, relative, rolling, summary | In progress |
+| Analytics | Returns, metrics, distribution, trades, relative, rolling, summary | Done        |
 | Style     | Visual identity: tokens, fonts, figure finishing and export  | Not started |
 | Plotting  | Analysis charts and tearsheet                                | Not started |
 | Reports   | Composed documents (PDF/HTML) in the house identity          | Not started |
