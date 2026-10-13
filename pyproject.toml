@@ -36,12 +36,13 @@ dev = [
     "pytz",
 ]
 research = [
-    "ibexQuant[yfinance,calendar]",
+    "ibexQuant[yfinance,calendar,plot]",
     "jupyterlab",
-    "matplotlib",
 ]
 yfinance = ["yfinance>=0.2.51"]
 calendar = ["pandas_market_calendars>=5.4.0"]
+# Charts in the house style (ibexQuant.style.mpl, ibexQuant.plotting).
+plot = ["matplotlib>=3.8"]
 
 [project.urls]
 Repository = "https://github.com/gustavobjorgefo/ibexQuant"

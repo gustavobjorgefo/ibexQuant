@@ -1,0 +1,2 @@
+# Font files are binary: never diff them or convert their line endings.
+*.ttf binary
