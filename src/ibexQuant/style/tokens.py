@@ -69,8 +69,10 @@ NEGATIVE: Final[str] = TERRACOTTA
 TEXT: Final[str] = INK
 SECONDARY_TEXT: Final[str] = STEEL
 AXIS: Final[str] = SLATE
-REFERENCE_LINE: Final[str] = SLATE
 GRID: Final[str] = ASH
+# A reference value (1.0 on a growth chart, 0% on returns) is drawn like a
+# grid line: a heavier line next to the x axis reads as a second axis.
+REFERENCE_LINE: Final[str] = GRID
 BACKGROUND: Final[str] = WHITE
 PAGE_BACKGROUND: Final[str] = CLOUD
 
@@ -128,6 +130,7 @@ SOURCE: Final[TextRole] = TextRole(size=7.5, weight=400, color=SECONDARY_TEXT, s
 SIGNATURE: Final[TextRole] = TextRole(size=8.0, weight=600, color=IBEX_BLUE)
 
 SIGNATURE_TEXT: Final[str] = "ibexQuant"
+SOURCE_PREFIX: Final[str] = "Source: "
 
 # --- Geometry ---
 
@@ -136,17 +139,33 @@ SIGNATURE_TEXT: Final[str] = "ibexQuant"
 STRATEGY_LINE_WIDTH: Final[float] = 1.8
 BENCHMARK_LINE_WIDTH: Final[float] = 1.3
 SERIES_LINE_WIDTH: Final[float] = 1.6
-REFERENCE_LINE_WIDTH: Final[float] = 0.8
 AXIS_LINE_WIDTH: Final[float] = 0.7
 GRID_LINE_WIDTH: Final[float] = 0.6
+REFERENCE_LINE_WIDTH: Final[float] = GRID_LINE_WIDTH
 
 DRAWDOWN_FILL_ALPHA: Final[float] = 0.18
+
+# Time series start at the left edge of the plot area and end a little before
+# the right edge, so the last value does not run into the frame. A fraction
+# of the time range.
+SERIES_END_PADDING: Final[float] = 0.02
+
+# Distance between an outside legend and the top of the plot area, in units of
+# the legend font size (matplotlib's convention for legend spacing).
+LEGEND_OFFSET: Final[float] = 0.3
 
 # Figure sizes, in inches. Provisional: once a report template exists they
 # derive from its text width, so that point sizes hold on paper.
 FIGURE_FULL_WIDTH: Final[tuple[float, float]] = (10.0, 5.0)
 FIGURE_HALF_WIDTH: Final[tuple[float, float]] = (5.0, 3.5)
 FIGURE_TEARSHEET: Final[tuple[float, float]] = (11.0, 15.5)
+
+# Figure furniture (title, subtitle, source, signature), in points: the space
+# between the figure edge and the furniture, between title and subtitle, and
+# the line height as a multiple of the font size.
+FIGURE_MARGIN: Final[float] = 10.0
+TITLE_GAP: Final[float] = 3.0
+LINE_SPACING: Final[float] = 1.25
 
 SCREEN_DPI: Final[int] = 110
 EXPORT_DPI: Final[int] = 300

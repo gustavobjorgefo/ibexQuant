@@ -78,9 +78,7 @@ def test_text_colors_are_readable_on_the_background(name: str) -> None:
     assert contrast_ratio(getattr(tokens, name), tokens.BACKGROUND) >= TEXT_CONTRAST
 
 
-@pytest.mark.parametrize(
-    "name", ["STRATEGY", "BENCHMARK", "POSITIVE", "NEGATIVE", "REFERENCE_LINE"]
-)
+@pytest.mark.parametrize("name", ["STRATEGY", "BENCHMARK", "POSITIVE", "NEGATIVE"])
 def test_chart_lines_stand_out_from_the_background(name: str) -> None:
     assert contrast_ratio(getattr(tokens, name), tokens.BACKGROUND) >= GRAPHIC_CONTRAST
 
@@ -96,6 +94,12 @@ def test_text_roles_are_readable_on_the_background() -> None:
 
     for role in roles:
         assert contrast_ratio(role.color, tokens.BACKGROUND) >= TEXT_CONTRAST
+
+
+def test_reference_line_reads_as_a_grid_line() -> None:
+    # Heavier than the grid, it would read as a second axis next to the x axis.
+    assert tokens.REFERENCE_LINE == tokens.GRID
+    assert tokens.REFERENCE_LINE_WIDTH == tokens.GRID_LINE_WIDTH
 
 
 def test_grid_stays_in_the_background() -> None:

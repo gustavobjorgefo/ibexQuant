@@ -11,14 +11,24 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import matplotlib as mpl
+import matplotlib.dates
+import pandas as pd
 import pytest
 from matplotlib import font_manager
 from matplotlib.axes import Axes
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.colors import to_hex
 from matplotlib.figure import Figure
 
 from ibexQuant.style import tokens
-from ibexQuant.style.mpl import apply_ibex_style, ibex_style, rc_params, style_axes
+from ibexQuant.style.mpl import (
+    apply_ibex_style,
+    fit_time_axis,
+    ibex_style,
+    outside_legend,
+    rc_params,
+    style_axes,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -215,3 +225,105 @@ def test_style_axes_is_idempotent_and_returns_the_axes() -> None:
 
     assert style_axes(style_axes(ax)) is ax
     assert not ax.spines["top"].get_visible()
+
+
+# --- Legends ---
+
+
+def labelled_axes() -> Axes:
+    """A styled Axes with two labelled series and a panel title."""
+    with ibex_style():
+        ax = Figure().subplots()
+        ax.plot([1.0, 1.2, 1.1], label="Benchmark")
+        ax.plot([1.0, 1.3, 1.5], label="Strategy")
+        ax.set_title("Growth of 1")
+    return ax
+
+
+def test_inside_legend_has_an_opaque_borderless_background() -> None:
+    # Grid lines and series pass behind the box instead of crossing the text.
+    with ibex_style():
+        legend = labelled_axes().legend(loc="upper left")
+
+    frame = legend.get_frame()
+    assert legend.get_frame_on()
+    assert to_hex(frame.get_facecolor()) == tokens.BACKGROUND.lower()
+    assert frame.get_alpha() in (None, 1.0)
+    assert frame.get_edgecolor()[3] == 0.0
+
+
+def test_outside_legend_sits_in_one_row_above_the_plot_area() -> None:
+    ax = labelled_axes()
+
+    legend = outside_legend(ax)
+    canvas = FigureCanvasAgg(ax.figure)  # type: ignore[arg-type]
+    canvas.draw()
+    renderer = canvas.get_renderer()
+    box = legend.get_window_extent(renderer)
+    plot_area = ax.get_window_extent(renderer)
+
+    labels = [text.get_window_extent(renderer) for text in legend.get_texts()]
+
+    assert box.y0 >= plot_area.y1
+    # Right-aligned with the plot area, inset only by the legend padding.
+    assert plot_area.x1 - 10.0 <= box.x1 <= plot_area.x1
+    # One row: labels at the same height (within a pixel, since font
+    # rasterization differs across platforms), left to right. A second row
+    # would sit a full line, about 15 pixels, lower.
+    assert labels[0].y0 == pytest.approx(labels[1].y0, abs=1.0)
+    assert labels[0].x1 < labels[1].x0
+    assert not legend.get_frame_on()
+
+
+def test_outside_legend_uses_the_house_font() -> None:
+    legend = outside_legend(labelled_axes())
+
+    for text in legend.get_texts():
+        assert text.get_fontfamily() == [tokens.FONT_FAMILY]
+        assert text.get_fontsize() == tokens.LEGEND.size
+        assert to_hex(text.get_color()) == tokens.LEGEND.color.lower()
+
+
+def test_outside_legend_needs_labelled_series() -> None:
+    ax = Figure().subplots()
+    ax.plot([1.0, 2.0])
+
+    with pytest.raises(ValueError, match="no labelled series"):
+        outside_legend(ax)
+
+
+# --- Time axis ---
+
+
+def test_time_axis_is_flush_at_the_start_with_room_at_the_end() -> None:
+    ax = Figure().subplots()
+    ax.plot([0.0, 50.0, 100.0], [1.0, 1.2, 1.1])
+
+    fit_time_axis(ax)
+
+    assert ax.get_xlim() == pytest.approx((0.0, 100.0 * (1 + tokens.SERIES_END_PADDING)))
+
+
+def test_time_axis_works_on_dates() -> None:
+    dates = pd.bdate_range("2024-01-01", periods=100)
+    ax = Figure().subplots()
+    ax.plot(dates, range(100))
+
+    fit_time_axis(ax, end_padding=0.0)
+
+    start, end = ax.get_xlim()
+    assert mpl.dates.num2date(start).date() == dates[0].date()
+    assert mpl.dates.num2date(end).date() == dates[-1].date()
+
+
+def test_time_axis_needs_data() -> None:
+    with pytest.raises(ValueError, match="no data"):
+        fit_time_axis(Figure().subplots())
+
+
+def test_time_axis_rejects_negative_padding() -> None:
+    ax = Figure().subplots()
+    ax.plot([0.0, 1.0])
+
+    with pytest.raises(ValueError, match="end_padding"):
+        fit_time_axis(ax, end_padding=-0.1)
