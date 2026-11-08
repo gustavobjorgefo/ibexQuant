@@ -218,3 +218,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Data never lives in this repository (ADR 0010, H0.2): it belongs under the
+# data root. Small synthetic fixtures under tests/ are the only exception.
+*.parquet
+*.zip
+*.ZIP
+*.csv
+*.xlsx
+*.duckdb
+!tests/**/*.parquet
+!tests/**/*.zip
+!tests/**/*.csv

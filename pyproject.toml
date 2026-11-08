@@ -44,6 +44,10 @@ calendar = ["pandas_market_calendars>=5.4.0"]
 # Charts in the house style (ibexQuant.style.mpl, ibexQuant.plotting).
 plot = ["matplotlib>=3.8"]
 
+[project.scripts]
+# Entry point for every data command (ADR 0010).
+ibexquant = "ibexQuant.cli:main"
+
 [project.urls]
 Repository = "https://github.com/gustavobjorgefo/ibexQuant"
 
