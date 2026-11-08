@@ -1,6 +1,6 @@
 # 0010 — Data root and storage layout
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-08
 - Phase: H0
 
@@ -156,6 +156,7 @@ ibexquant data init [--root PATH]
 | Root exists but is not a directory                             | `NotADirectoryError` |
 | Root exists but a zone directory is missing                    | `DataLayoutError`, suggesting `ibexquant data init` |
 | Path part empty, absolute, or containing `..`                  | `ValueError` |
+| Path part not a string                                         | `TypeError` |
 
 All errors raised by the module derive from `DataStoreError`, so a caller
 can catch the whole family in one clause.
