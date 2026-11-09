@@ -28,6 +28,7 @@ from ibexQuant.data.ingestion.b3 import (
 from ibexQuant.data.ingestion.b3.bars_daily import (
     MANIFEST_SCHEMA_VERSION,
     PARSER_VERSION,
+    pick_source,
     source_path,
 )
 from ibexQuant.data.store import DataStore
@@ -229,14 +230,16 @@ def test_missing_raw_folder(store: DataStore) -> None:
         build_bars_daily(store, 2024)
 
 
-def test_two_files_for_one_year_are_ambiguous(store: DataStore) -> None:
-    folder = raw_folder(store)
-    write_zip(folder, 2024, lines_for(2024, [detail()]), name="COTAHIST_A2024.ZIP")
-    write_zip(folder, 2024, lines_for(2024, [detail()]), name="cotahist_a2024.zip")
-    if len(list(folder.iterdir())) == 1:
-        pytest.skip("case-insensitive file system: both names are the same file")
+def test_two_files_for_one_year_are_ambiguous(tmp_path: Path) -> None:
+    # Built as paths, not files: on Windows the two names would be one file.
+    candidates = [tmp_path / "COTAHIST_A2024.ZIP", tmp_path / "cotahist_a2024.zip"]
     with pytest.raises(CotahistFormatError, match="More than one file"):
-        build_bars_daily(store, 2024)
+        pick_source(candidates, 2024, folder=tmp_path)
+
+
+def test_pick_source_ignores_other_files(tmp_path: Path) -> None:
+    candidates = [tmp_path / "COTAHIST_A2023.ZIP", tmp_path / "Cotahist_A2024.Zip"]
+    assert pick_source(candidates, 2024, folder=tmp_path) == candidates[1]
 
 
 # --- Manifest ---

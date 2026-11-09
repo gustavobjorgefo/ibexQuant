@@ -131,12 +131,27 @@ def source_path(store: DataStore, year: int) -> Path:
         source ambiguous.
     """
     folder = store.raw(*RAW_PARTS)
+    candidates = list(folder.iterdir()) if folder.is_dir() else []
+    return pick_source(candidates, year, folder=folder)
+
+
+def pick_source(candidates: Iterable[Path], year: int, *, folder: Path) -> Path:
+    """
+    Choose the ZIP of ``year`` among ``candidates``, comparing names without case.
+
+    Separate from :func:`source_path` so the ambiguity rule can be tested on
+    any file system: on a case-insensitive one (Windows), two names that
+    differ only in case cannot coexist.
+
+    Raises
+    ------
+    CotahistNotFoundError
+        If no candidate is the ZIP of ``year``.
+    CotahistFormatError
+        If more than one is.
+    """
     expected = f"COTAHIST_A{year}.ZIP"
-    matches = (
-        [path for path in folder.iterdir() if path.name.upper() == expected]
-        if folder.is_dir()
-        else []
-    )
+    matches = [path for path in candidates if path.name.upper() == expected]
     if not matches:
         raise CotahistNotFoundError(f"No {expected} in {folder}.")
     if len(matches) > 1:

@@ -1,6 +1,6 @@
 # 0011 — COTAHIST ingestion
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-09
 - Phase: H1
 

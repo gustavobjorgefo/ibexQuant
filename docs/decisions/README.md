@@ -42,6 +42,7 @@ does, but *why it is not done differently*.
 | 0008 | [Kernel conventions](0008-kernel-conventions.md)          | Accepted | 1     |
 | 0009 | [Performance analytics](0009-performance-analytics.md)    | Accepted | —     |
 | 0010 | [Data root and storage layout](0010-data-root-and-storage-layout.md) | Accepted | H0 |
+| 0011 | [COTAHIST ingestion](0011-cotahist-ingestion.md) | Accepted | H1 |
 
 ## Pending items
 
@@ -53,7 +54,7 @@ resolved; when it is, the resolving record is linked here.
 | P1 | Timestamp convention for the live engine, compatible with `Panel` (see 0002) | Live engine design |
 | P2 | `SessionsSinceLastObservation` node, exposing absence to the model (see 0003) | Phase 2 |
 | P3 | Universe module: Ibovespa composition by effective date and point-in-time liquidity filter (see 0004) | H5 (see 0010) |
-| P4 | Unadjusted prices in `Panel` for features that are not scale invariant (see 0005) | H4 (see 0010) |
+| P4 | Unadjusted prices in `Panel` for features that are not scale invariant (see 0005) | Raw prices available through `B3Provider` (0011); adjusted alongside raw in H4 |
 | P5 | Backtest runner loads data from `lookback` sessions before the backtest start, using `FeatureSet.lookback` and the trading calendar (see 0008) | Backtest engine design |
 | P6 | Backtest engine produces the trades table (`entry_time`, `exit_time`, result per trade) and positions, enabling exposure and turnover metrics from holdings (see 0009) | Backtest engine design |
 | P7 | `analytics/inference.py`: normality, significance of the mean, Probabilistic Sharpe Ratio; scipy as an optional `stats` extra (see 0009) | After plotting |
@@ -82,7 +83,7 @@ The B3 equities data base that replaces yfinance for long backtests (see
 | Phase | Scope                                                         | Status      |
 |-------|---------------------------------------------------------------|-------------|
 | H0    | Data root, storage layout, `DataStore`, `ibexquant data init` | Done        |
-| H1    | COTAHIST ingestion into daily bars, `B3Provider` (raw)        | Not started |
+| H1    | COTAHIST ingestion into daily bars, `B3Provider` (raw)        | Done        |
 | H2    | Security master: permanent identifiers across ticker changes  | Not started |
 | H3    | Corporate actions ledger                                      | Not started |
 | H4    | Anchored price adjustment                                     | Not started |
