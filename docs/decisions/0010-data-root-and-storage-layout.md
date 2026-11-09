@@ -190,3 +190,12 @@ can catch the whole family in one clause.
 - Later phases add sub-commands (`ingest`, `build`, `audit`, `review`)
   to the same CLI and their own tables to the zones, without changing the
   layout.
+
+## Amendments
+
+- **2026-11-09** — H0.9 named `duckdb` as an H1 dependency. H1 needed only
+  filtered parquet reads, so 0011 (H1.15) defers `duckdb` until a query needs
+  more; `pyarrow` alone forms the `b3` extra. H0.5 is refined, not changed,
+  by 0011 (H1.2): a closed year's raw file is immutable, while the current
+  year's is replaced on each refresh, with the manifest recording which
+  download built the curated data.
