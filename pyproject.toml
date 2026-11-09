@@ -36,13 +36,15 @@ dev = [
     "pytz",
 ]
 research = [
-    "ibexQuant[yfinance,calendar,plot]",
+    "ibexQuant[yfinance,calendar,plot,b3]",
     "jupyterlab",
 ]
 yfinance = ["yfinance>=0.2.51"]
 calendar = ["pandas_market_calendars>=5.4.0"]
 # Charts in the house style (ibexQuant.style.mpl, ibexQuant.plotting).
 plot = ["matplotlib>=3.8"]
+# B3 historical data base: parquet storage of curated tables (ADR 0011, H1.15).
+b3 = ["pyarrow>=18"]
 
 [project.scripts]
 # Entry point for every data command (ADR 0010).
@@ -85,6 +87,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Makes shared test helpers importable (`from support.cotahist import ...`).
+pythonpath = ["tests"]
 addopts = [
     "--strict-markers",
     "--import-mode=importlib",
