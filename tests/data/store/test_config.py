@@ -16,10 +16,13 @@ import pytest
 
 from ibexQuant.data.store import (
     DATA_ROOT_ENV_VAR,
+    OVERRIDES_ROOT_ENV_VAR,
     DataRootConfigError,
     DataRootNotConfiguredError,
     DataStoreError,
+    OverridesRootNotConfiguredError,
     resolve_data_root,
+    resolve_overrides_root,
 )
 from ibexQuant.data.store import config as config_module
 
@@ -194,3 +197,30 @@ def test_config_errors_are_value_errors_and_store_errors(tmp_path: Path) -> None
         resolve_data_root(environ={}, config_path=path)
     with pytest.raises(DataStoreError):
         resolve_data_root(environ={}, config_path=path)
+
+
+# --- Overrides root (ADR 0012, H2.9) ---
+
+
+def test_overrides_root_resolution_order(tmp_path: Path) -> None:
+    config = write_config(tmp_path, f"[overrides]\nroot = '{tmp_path / 'file'}'\n")
+    env = {OVERRIDES_ROOT_ENV_VAR: str(tmp_path / "env")}
+
+    assert resolve_overrides_root(tmp_path / "x", environ=env, config_path=config) == (
+        tmp_path / "x"
+    )
+    assert resolve_overrides_root(environ=env, config_path=config) == tmp_path / "env"
+    assert resolve_overrides_root(environ={}, config_path=config) == tmp_path / "file"
+
+
+def test_overrides_root_is_independent_of_the_data_root(tmp_path: Path) -> None:
+    config = write_config(tmp_path, f"[data]\nroot = '{tmp_path}'\n")
+    with pytest.raises(OverridesRootNotConfiguredError, match="--no-overrides"):
+        resolve_overrides_root(environ={DATA_ROOT_ENV_VAR: str(tmp_path)}, config_path=config)
+
+
+def test_overrides_root_follows_the_same_path_rules(tmp_path: Path) -> None:
+    with pytest.raises(DataRootConfigError, match="absolute"):
+        resolve_overrides_root("overrides", environ={})
+    with pytest.raises(LookupError):
+        resolve_overrides_root(environ={}, config_path=tmp_path / "absent.toml")

@@ -30,6 +30,8 @@ dev = [
     "nbstripout",
     # Stub versions track pandas versions; 2.x stubs describe the pandas 2 API.
     "pandas-stubs>=3.0",
+    # Type stubs of the `b3` extra's YAML parser (ADR 0012, H2.16).
+    "types-PyYAML",
     # Reference implementation for analytics parity tests; never imported by src.
     "empyrical-reloaded",
     # Imported by empyrical without being declared; pandas 3 no longer brings it.
@@ -43,8 +45,8 @@ yfinance = ["yfinance>=0.2.51"]
 calendar = ["pandas_market_calendars>=5.4.0"]
 # Charts in the house style (ibexQuant.style.mpl, ibexQuant.plotting).
 plot = ["matplotlib>=3.8"]
-# B3 historical data base: parquet storage of curated tables (ADR 0011, H1.15).
-b3 = ["pyarrow>=18"]
+# B3 historical data base: parquet storage (ADR 0011, H1.15) and override files (0012, H2.16).
+b3 = ["pyarrow>=18", "pyyaml>=6.0"]
 
 [project.scripts]
 # Entry point for every data command (ADR 0010).
