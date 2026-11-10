@@ -38,11 +38,18 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
 
-from ibexQuant.data.store.errors import DataRootConfigError, DataRootNotConfiguredError
+from ibexQuant.data.store.errors import (
+    DataRootConfigError,
+    DataRootNotConfiguredError,
+    OverridesRootNotConfiguredError,
+)
 
 DATA_ROOT_ENV_VAR: Final[str] = "IBEXQUANT_DATA_ROOT"
 CONFIG_TABLE: Final[str] = "data"
 CONFIG_ROOT_KEY: Final[str] = "root"
+
+OVERRIDES_ROOT_ENV_VAR: Final[str] = "IBEXQUANT_OVERRIDES_ROOT"
+OVERRIDES_CONFIG_TABLE: Final[str] = "overrides"
 
 
 def default_config_path() -> Path:
@@ -93,19 +100,17 @@ def resolve_data_root(
         If the path found is relative or empty, the config file is not valid
         TOML, or ``[data]`` / ``[data].root`` has the wrong type.
     """
-    if explicit is not None:
-        return _absolute(os.fspath(explicit), source="the explicit data root")
-
-    env = os.environ if environ is None else environ
-    from_env = env.get(DATA_ROOT_ENV_VAR, "")
-    if from_env:
-        return _absolute(from_env, source=f"environment variable {DATA_ROOT_ENV_VAR}")
-
     path = default_config_path() if config_path is None else config_path
-    from_file = _read_config_root(path)
-    if from_file is not None:
-        return _absolute(from_file, source=f"[{CONFIG_TABLE}].{CONFIG_ROOT_KEY} in {path}")
-
+    found = _resolve(
+        explicit,
+        environ=environ,
+        config_path=path,
+        env_var=DATA_ROOT_ENV_VAR,
+        table=CONFIG_TABLE,
+        what="data root",
+    )
+    if found is not None:
+        return found
     raise DataRootNotConfiguredError(
         "No data root configured. Use one of:\n"
         "  - an explicit root (DataStore.open(root=...) or --root in the CLI);\n"
@@ -114,7 +119,77 @@ def resolve_data_root(
     )
 
 
+def resolve_overrides_root(
+    explicit: str | os.PathLike[str] | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    config_path: Path | None = None,
+) -> Path:
+    """
+    Resolve the folder of the hand-made override files (ADR 0012, H2.9).
+
+    Same order and rules as :func:`resolve_data_root`: explicit argument,
+    ``IBEXQUANT_OVERRIDES_ROOT``, then ``[overrides].root`` in the config
+    file. The folder lives in the private ``ibexquant-data-config``
+    repository, outside the data root (0010, H0.10).
+
+    Returns
+    -------
+    Path
+        Absolute path of the overrides folder. Not checked on disk.
+
+    Raises
+    ------
+    OverridesRootNotConfiguredError
+        If none of the three sources names it.
+    DataRootConfigError
+        If the path found is relative or empty, or the config file is invalid.
+    """
+    path = default_config_path() if config_path is None else config_path
+    found = _resolve(
+        explicit,
+        environ=environ,
+        config_path=path,
+        env_var=OVERRIDES_ROOT_ENV_VAR,
+        table=OVERRIDES_CONFIG_TABLE,
+        what="overrides root",
+    )
+    if found is not None:
+        return found
+    raise OverridesRootNotConfiguredError(
+        "No overrides root configured. Use one of:\n"
+        "  - an explicit root;\n"
+        f"  - the environment variable {OVERRIDES_ROOT_ENV_VAR};\n"
+        f'  - root = "..." under [{OVERRIDES_CONFIG_TABLE}] in {path};\n'
+        "  - or build without overrides (--no-overrides)."
+    )
+
+
 # --- Helpers ---
+
+
+def _resolve(
+    explicit: str | os.PathLike[str] | None,
+    *,
+    environ: Mapping[str, str] | None,
+    config_path: Path,
+    env_var: str,
+    table: str,
+    what: str,
+) -> Path | None:
+    """Explicit, then environment, then config file; ``None`` when none is set."""
+    if explicit is not None:
+        return _absolute(os.fspath(explicit), source=f"the explicit {what}")
+
+    env = os.environ if environ is None else environ
+    from_env = env.get(env_var, "")
+    if from_env:
+        return _absolute(from_env, source=f"environment variable {env_var}")
+
+    from_file = _read_config_value(config_path, table)
+    if from_file is not None:
+        return _absolute(from_file, source=f"[{table}].{CONFIG_ROOT_KEY} in {config_path}")
+    return None
 
 
 def _absolute(raw: str, *, source: str) -> Path:
@@ -130,8 +205,8 @@ def _absolute(raw: str, *, source: str) -> Path:
     return path
 
 
-def _read_config_root(path: Path) -> str | None:
-    """Return ``[data].root`` from ``path``, or ``None`` when absent."""
+def _read_config_value(path: Path, table_name: str) -> str | None:
+    """Return ``[table_name].root`` from ``path``, or ``None`` when absent."""
     if not path.is_file():
         return None
     try:
@@ -139,18 +214,18 @@ def _read_config_root(path: Path) -> str | None:
     except tomllib.TOMLDecodeError as error:
         raise DataRootConfigError(f"{path} is not valid TOML: {error}") from error
 
-    table = document.get(CONFIG_TABLE)
+    table = document.get(table_name)
     if table is None:
         return None
     if not isinstance(table, dict):
-        raise DataRootConfigError(f"[{CONFIG_TABLE}] in {path} must be a table.")
+        raise DataRootConfigError(f"[{table_name}] in {path} must be a table.")
 
     root = table.get(CONFIG_ROOT_KEY)
     if root is None:
         return None
     if not isinstance(root, str):
         raise DataRootConfigError(
-            f"[{CONFIG_TABLE}].{CONFIG_ROOT_KEY} in {path} must be a string, "
+            f"[{table_name}].{CONFIG_ROOT_KEY} in {path} must be a string, "
             f"got {type(root).__name__}."
         )
     return root

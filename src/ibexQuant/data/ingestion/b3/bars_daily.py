@@ -30,8 +30,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
-import os
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Final
@@ -39,6 +38,7 @@ from typing import Final
 from ibexQuant.data.ingestion.b3.cotahist import FILE_NAME_PATTERN, read_cotahist, year_of
 from ibexQuant.data.ingestion.b3.errors import CotahistFormatError, CotahistNotFoundError
 from ibexQuant.data.store import DataStore
+from ibexQuant.data.store.atomic import replace_atomically
 
 RAW_PARTS: Final[tuple[str, ...]] = ("b3", "cotahist")
 CURATED_PARTS: Final[tuple[str, ...]] = ("b3", "bars_daily")
@@ -224,7 +224,7 @@ def _build_year(store: DataStore, year: int) -> ManifestEntry:
 
     partition = store.curated(*CURATED_PARTS, f"year={year}", PARTITION_FILE)
     partition.parent.mkdir(parents=True, exist_ok=True)
-    _replace_atomically(
+    replace_atomically(
         partition,
         lambda temporary: frame.to_parquet(
             temporary, engine="pyarrow", compression="zstd", index=False
@@ -259,18 +259,7 @@ def _write_manifest(store: DataStore, entries: dict[int, ManifestEntry]) -> None
     path = store.curated(*CURATED_PARTS, MANIFEST_FILE)
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(document, indent=2) + "\n"
-    _replace_atomically(path, lambda temporary: temporary.write_text(text, encoding="utf-8"))
-
-
-def _replace_atomically(target: Path, write: Callable[[Path], object]) -> None:
-    """Write through a temporary file in the same folder, then rename over ``target``."""
-    temporary = target.with_name(target.name + ".tmp")
-    try:
-        write(temporary)
-        # os.replace is atomic on the same file system, on Windows included.
-        os.replace(temporary, target)
-    finally:
-        temporary.unlink(missing_ok=True)
+    replace_atomically(path, lambda temporary: temporary.write_text(text, encoding="utf-8"))
 
 
 def _sha256(path: Path) -> str:
