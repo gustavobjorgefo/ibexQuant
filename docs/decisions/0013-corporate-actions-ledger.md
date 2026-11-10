@@ -41,6 +41,9 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
 | Rows quoted per 1,000 shares (`quotedPerShares` 1000, most events up to 2007) give value and closing price per 1,000 shares: the closing price is 1,000 times COTAHIST's, and the published yield matches. StatusInvest copied these values as per share | 1,926 rows against COTAHIST; 169 against StatusInvest | H3.5 |
 | Every issuer whose trading name contains `/` (`KLABIN S/A`, `AMBEV S/A`, `SADIA S/A`) returned an empty cash history | 16 issuers | H3.10 |
 | Stock events have nine labels; 247 rows deliver another asset (`assetIssued` ≠ `isinCode`): spin-offs (`MRVE3` holders received 7.215% of a `LOGG3`, `BRAP` 33.24% of a `VALE3`), mergers (`INCORPORACAO`, `LIGH` → `LIGT`) and bonuses in another class. A row whose asset is the ISIN itself with factor 100 only says the holder keeps the share | 1,032 rows, 1978–2026 | H3.5, H3.7 |
+| The first build left 562 unexplained jumps and hid small bonus issues inside ordinary moves: BBDC4 opened at about 0.91 of its previous close every year from 2010 to 2021, ITUB4 in 2013–2016, ITSA4 in 2012–2016, with no event in any source. B3's stock list also lacks PETR's 2005 split and VALE's 2004 and 2006 splits; the inferred splits found them (31 of 34 found in yfinance on the same date) | First real build | H3.14 |
+| The CVM reference forms (FRE, item 17.3) list splits, reverse splits and bonus issues with CNPJ, approval date and share counts before and after, per class; the table exists only in forms under ICVM 480 (ZIPs up to 2022). It holds every missing Bradesco, Itaú and Itaúsa bonus; counts give approximate ratios (Bradesco 2021: 1.0982 common, 1.0932 preferred) | FRE 2016–2022: 510 events | H3.14 |
+| Placing FRE events on the first ex-session after approval whose price ratio agrees: 263 of 582 company-ISIN pairs placed (123 confirming B3, 75 explaining unexplained sessions, 36 confirming inferred splits, 29 explaining jumps); the rest are events before listing or classes that never traded | Simulation on the real base | H3.14 |
 | Holders of a delisted share received another existing share at a ratio: `LAME4` → `AMER3` (0.188964), `SOMA3` → `AZZA3`, `PCAR4` → `PCAR3`, `VIVT4` → `VIVT3`, `CESP6` → `AURE3`; the H2 pairs of the old IBrX notes that are true renames are all linked | Old IBrX notes against the security master | H3.7 |
 
 ## Decision
@@ -80,14 +83,15 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
      and recent cash events (`GetListedSupplementCompany`), and the cash
      history from 1995 (`GetListedCashDividends`), one JSON snapshot per
      issuer and download (H3.10). It covers delisted issuers too.
-  3. `b3_credited` — the daily *Earnings credited* files; cash events from
+  3. `cvm_fre` — stock events of the CVM reference forms (H3.14).
+  4. `b3_credited` — the daily *Earnings credited* files; cash events from
      2026-06 on, and the check of values credited.
-  4. `bootstrap` — cash events of StatusInvest, converted once into the
+  5. `bootstrap` — cash events of StatusInvest, converted once into the
      canonical input (H3.10) and frozen, used **only for securities without
      any `b3_listed` cash history**, and **only when they match an
      ex-session** (H3.3). An unmatched bootstrap event is dropped and
      counted.
-  5. `inferred` — stock events read from an ex-session's price ratio (H3.6).
+  6. `inferred` — stock events read from an ex-session's price ratio (H3.6).
 
   yfinance is not a source. Every source keeps its raw files in `raw/`, as
   downloaded; the build never fetches anything.
@@ -217,6 +221,23 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
   security in force on the row's data-com (renamed issuers report their old
   history under the new code). A row that resolves to no ISIN, or to more
   than one, is reported and not used.
+
+### The CVM reference forms
+
+- **H3.14 — FRE stock events.** `raw/cvm/fre/fre_cia_aberta_YYYY.zip`, placed
+  by hand like the FCA. Each event of `capital_social_desdobramento` (and
+  its `_classe_acao` companion) gives, per share class, the ratio of shares
+  after to shares before; a ratio within 0.5% of a whole percentage or of a
+  common factor is read as that value. The class maps to the company's
+  round-lot ISINs through the CNPJ of the security master (`ON` → `ACNOR`,
+  `PNA` → `ACNPA`, `PN` → the preferred ISINs no class row names; units
+  follow when common and preferred ratios agree). The event goes ex on the
+  first ex-session of the ISIN within 180 days of approval whose price
+  ratio agrees: `|log(open_ratio × share_ratio)|` at most 0.1 and at most
+  half of `|log(share_ratio)|`, so a 10% bonus is not taken for an ordinary
+  move. Events with no such session are reported as unresolved and not
+  used. The forms after 2022 (Resolution CVM 80) no longer carry the table;
+  B3's weekly snapshots cover events from then on.
 
 ### Overrides and commands
 

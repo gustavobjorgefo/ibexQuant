@@ -252,6 +252,7 @@ def _data_build_corporate_actions(args: argparse.Namespace) -> int:
     """Build the ledger and print its summary."""
     from ibexQuant.data.ingestion.b3.earnings_credited import EarningsCreditedFormatError
     from ibexQuant.data.ingestion.b3.listed_companies import ListedCompaniesFormatError
+    from ibexQuant.data.ingestion.cvm import FreFormatError
     from ibexQuant.data.reference import OverridesFormatError, SecurityMasterError
     from ibexQuant.data.reference.corporate_action_overrides import (
         ActionOverrides,
@@ -282,6 +283,7 @@ def _data_build_corporate_actions(args: argparse.Namespace) -> int:
         ListedCompaniesFormatError,
         EarningsCreditedFormatError,
         BootstrapFormatError,
+        FreFormatError,
     ) as error:
         print(f"error: {error}", file=sys.stderr)
         return EXIT_USAGE
@@ -297,7 +299,7 @@ def _data_build_corporate_actions(args: argparse.Namespace) -> int:
     line("bootstrap dropped", summary.bootstrap_dropped)
     snapshots = summary.inputs["snapshots"]
     names = ", ".join(str(name) for name in snapshots) if isinstance(snapshots, list) else ""
-    print(f"snapshots: {names or 'none'}")
+    print(f"snapshots: {names or 'none'}; FRE files: {summary.inputs['fre_files']}")
     if summary.inputs["overrides"] is None:
         print("built without corporate_actions.yaml")
     return EXIT_OK

@@ -31,6 +31,7 @@ What does not belong here
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from enum import StrEnum
 from typing import Final
@@ -48,6 +49,7 @@ from ibexQuant.data.reference.event_types import (
     stock_event,
 )
 from ibexQuant.data.reference.ex_sessions import ROUND_LOT, SKELETON_TYPES
+from ibexQuant.data.reference.security_master import COMMON_FACTORS
 
 SOURCE_EVENT_COLUMNS: Final[tuple[str, ...]] = (
     "isin",
@@ -82,6 +84,7 @@ class Source(StrEnum):
 
     MANUAL = "manual"
     B3_LISTED = "b3_listed"
+    CVM_FRE = "cvm_fre"
     B3_CREDITED = "b3_credited"
     BOOTSTRAP = "bootstrap"
     INFERRED = "inferred"
@@ -124,6 +127,12 @@ class IsinLocator:
         ):
             self._by_ticker.setdefault(ticker, set()).add(security)
         self._isins: np.ndarray = np.array(sorted(self._by_isin))
+        with_cnpj = round_lot[round_lot["cnpj"].fillna("").astype(str) != ""]
+        self._by_cnpj: dict[str, set[str]] = {}
+        for cnpj, isin in zip(
+            with_cnpj["cnpj"].astype(str), with_cnpj["isin"].astype(str), strict=True
+        ):
+            self._by_cnpj.setdefault(cnpj, set()).add(isin)
 
     def securities_with_prefix(self, prefix: str) -> set[str]:
         """Return the securities of the ISINs that start with ``prefix``."""
@@ -138,6 +147,10 @@ class IsinLocator:
     def securities_with_ticker(self, ticker: str) -> set[str]:
         """Return the securities that ever traded round lots under ``ticker``."""
         return set(self._by_ticker.get(ticker, set()))
+
+    def isins_of_cnpj(self, cnpj: str) -> set[str]:
+        """Return the round-lot ISINs the security master ties to a CNPJ."""
+        return set(self._by_cnpj.get(cnpj, set()))
 
     def isin_at(self, securities: Iterable[str], day: pd.Timestamp) -> tuple[str | None, str]:
         """
@@ -315,6 +328,102 @@ def credited_events(credited: pd.DataFrame) -> pd.DataFrame:
         }
     )
     return _keep_skeleton_isins(_frame(events, Source.B3_CREDITED))
+
+
+# --- CVM reference forms ---
+
+FRE_KINDS: Final[dict[str, EventType]] = {
+    "Desdobramento": EventType.SPLIT,
+    "Grupamento": EventType.REVERSE_SPLIT,
+    "Bonificação": EventType.STOCK_BONUS,
+}
+SNAP_TOLERANCE: Final[float] = 0.005
+"""A share-count ratio this close to a round one is read as the round one (H3.14)."""
+
+
+def snap_ratio(ratio: float) -> float:
+    """
+    Return ``ratio`` read as a common factor, or else a whole percentage, when within 0.5%.
+
+    Share counts in the forms move with issues and cancellations, so a 10% bonus
+    can read 1.0982 and a 10-for-1 split 9.97; the round value is the event's
+    (H3.14). Common factors (2, 10, 1/10...) are tried first.
+    """
+    for candidate in (*COMMON_FACTORS, round(ratio * 100) / 100):
+        if candidate and abs(ratio / candidate - 1) <= SNAP_TOLERANCE:
+            return float(candidate)
+    return ratio
+
+
+def fre_events(fre: pd.DataFrame, locator: IsinLocator) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Return the FRE stock events, one per candidate ISIN, and the rows with no ISIN.
+
+    Each event is listed for every round-lot ISIN of the company's CNPJ whose
+    class matches (``ON`` -> ``ACNOR``, ``PNA`` -> ``ACNPA``, ``PN`` -> the
+    preferred ISINs no class row of the event names); units (``CDAM``) follow
+    when the common and preferred ratios agree. The approval date goes to
+    ``approved_on``; the ledger places the event by ratio (H3.14).
+    """
+    rows: list[dict[str, object]] = []
+    unresolved: list[dict[str, object]] = []
+    for (cnpj, approved, kind), event in fre.groupby(["cnpj", "approved_on", "kind"], sort=False):
+        isins = locator.isins_of_cnpj(str(cnpj))
+        ratios = dict(
+            zip(
+                event["share_class"],
+                (event["shares_after"] / event["shares_before"]).astype(float),
+                strict=True,
+            )
+        )
+        targets = _fre_targets(isins, ratios)
+        origin = f"fre:{event['source_file'].iloc[-1]}:{event['company'].iloc[-1]}"
+        if not targets:
+            unresolved.append(
+                {
+                    "source": Source.CVM_FRE.value,
+                    "origin": origin,
+                    "key": str(cnpj),
+                    "last_cum_date": approved,
+                    "reason": "no ISIN for the CNPJ",
+                }
+            )
+        for isin, ratio in targets:
+            if math.isclose(ratio, 1.0, rel_tol=1e-9):
+                continue
+            rows.append(
+                {
+                    "isin": isin,
+                    "event_type": FRE_KINDS[str(kind)].value,
+                    "share_ratio": snap_ratio(ratio),
+                    "approved_on": approved,
+                    "origin": origin,
+                    "label": kind,
+                }
+            )
+    events = _keep_skeleton_isins(_frame(rows, Source.CVM_FRE))
+    return events, pd.DataFrame(unresolved, columns=list(UNRESOLVED_COLUMNS))
+
+
+def _fre_targets(isins: set[str], ratios: dict[str, float]) -> list[tuple[str, float]]:
+    named = {f"ACNP{share_class[2]}" for share_class in ratios if len(share_class) == 3}
+    targets = []
+    for isin in sorted(isins):
+        kind = isin[6:11]
+        if kind == "ACNOR" and "ON" in ratios:
+            targets.append((isin, ratios["ON"]))
+        elif kind.startswith("ACNP") and f"PN{kind[4]}" in ratios:
+            targets.append((isin, ratios[f"PN{kind[4]}"]))
+        elif kind.startswith("ACNP") and kind not in named and "PN" in ratios:
+            targets.append((isin, ratios["PN"]))
+        elif (
+            kind.startswith("CDAM")
+            and "ON" in ratios
+            and "PN" in ratios
+            and math.isclose(ratios["ON"], ratios["PN"], rel_tol=SNAP_TOLERANCE)
+        ):
+            targets.append((isin, ratios["ON"]))
+    return targets
 
 
 # --- Bootstrap ---

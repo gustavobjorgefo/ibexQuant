@@ -20,7 +20,9 @@ from ibexQuant.data.reference.corporate_action_sources import (
     IsinLocator,
     bootstrap_events,
     credited_events,
+    fre_events,
     listed_events,
+    snap_ratio,
 )
 
 VVAR, VIIA, BHIA = "BRVVARACNOR1", "BRVIIAACNOR7", "BRBHIAACNOR1"
@@ -289,3 +291,67 @@ def test_bootstrap_without_a_column_is_an_error(locator: IsinLocator) -> None:
 def test_bootstrap_events_must_be_cash(locator: IsinLocator) -> None:
     with pytest.raises(BootstrapFormatError, match="SPLIT"):
         bootstrap_events(bootstrap(event_type="SPLIT"), locator)
+
+
+# --- CVM reference forms ---
+
+
+def fre_row(share_class: str, before: float, after: float) -> dict[str, object]:
+    return {
+        "cnpj": "11.111.111/0001-11",
+        "company": "ACME",
+        "approved_on": DAY("2016-03-10"),
+        "kind": "Bonificação",
+        "share_class": share_class,
+        "shares_before": before,
+        "shares_after": after,
+        "source_file": "fre_cia_aberta_2016.zip",
+    }
+
+
+def test_fre_events_reach_every_class_of_the_company() -> None:
+    def acme(ticker: str, isin: str) -> dict[str, object]:
+        return {
+            **span(isin, ticker, isin, "2010-01-04", "2020-12-30"),
+            "cnpj": "11.111.111/0001-11",
+        }
+
+    locator = IsinLocator(
+        pd.DataFrame(
+            [
+                acme("ACME3", "BRACMEACNOR1"),
+                acme("ACME5", "BRACMEACNPA2"),
+                acme("ACME6", "BRACMEACNPB3"),
+                acme("ACME11", "BRACMECDAM14"),
+            ]
+        )
+    )
+    fre = pd.DataFrame(
+        [fre_row("ON", 100, 109.82), fre_row("PN", 200, 220), fre_row("PNA", 50, 50)]
+    )
+    events, unresolved = fre_events(fre, locator)
+    assert events[["isin", "event_type", "share_ratio", "source"]].values.tolist() == [
+        ["BRACMEACNOR1", "STOCK_BONUS", 1.1, "cvm_fre"],
+        ["BRACMEACNPB3", "STOCK_BONUS", 1.1, "cvm_fre"],
+        ["BRACMECDAM14", "STOCK_BONUS", 1.1, "cvm_fre"],
+    ]
+    assert events.iloc[0]["approved_on"] == DAY("2016-03-10")
+    assert unresolved.empty
+
+
+def test_fre_events_of_an_unknown_company_are_unresolved(locator: IsinLocator) -> None:
+    events, unresolved = fre_events(pd.DataFrame([fre_row("ON", 100, 110)]), locator)
+    assert events.empty
+    assert unresolved[["source", "key", "reason"]].values.tolist() == [
+        ["cvm_fre", "11.111.111/0001-11", "no ISIN for the CNPJ"]
+    ]
+
+
+@pytest.mark.parametrize(
+    ("ratio", "snapped"),
+    [(1.0982, 1.1), (1.0932, 1.09), (0.1123, 0.1123), (9.97, 10.0), (0.0742, 0.0742)],
+)
+def test_ratios_are_read_as_round_values_within_half_a_percent(
+    ratio: float, snapped: float
+) -> None:
+    assert snap_ratio(ratio) == pytest.approx(snapped)

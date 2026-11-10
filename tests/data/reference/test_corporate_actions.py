@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import json
 import math
+import zipfile
 from pathlib import Path
 
 import pandas as pd
 import pytest
-from support.ledger import DAY, PETR, VALE, ledger_store
+from support.ledger import DAY, PETR, PETR_CNPJ, VALE, ledger_store
 
 from ibexQuant.data.reference.corporate_action_overrides import (
     ActionOverrides,
@@ -214,3 +215,60 @@ def test_an_event_after_the_last_session_has_no_ex_date(store: DataStore) -> Non
     assert pd.isna(future["ex_date"])
     assert future["placement"] == "not_traded"
     assert events["event_id"].is_unique
+
+
+# --- CVM reference forms ---
+
+
+def write_fre(store: DataStore, lines: list[str]) -> None:
+    header = (
+        "CNPJ_Companhia;Data_Referencia;Versao;ID_Documento;Nome_Companhia;"
+        "ID_Capital_Social_Desdobramento;Data_Aprovacao;Tipo_Evento;"
+        "Quantidade_Acoes_Ordinarias_Antes_Aprovacao;"
+        "Quantidade_Acoes_Preferenciais_Antes_Aprovacao;Quantidade_Total_Acoes_Antes_Aprovacao;"
+        "Quantidade_Acoes_Ordinarias_Depois_Aprovacao;"
+        "Quantidade_Acoes_Preferenciais_Depois_Aprovacao;Quantidade_Total_Acoes_Depois_Aprovacao"
+    )
+    folder = store.raw("cvm", "fre")
+    folder.mkdir(parents=True)
+    with zipfile.ZipFile(folder / "fre_cia_aberta_2024.zip", "w") as archive:
+        archive.writestr(
+            "fre_cia_aberta_capital_social_desdobramento_2024.csv",
+            "\n".join([header, *lines]).encode("latin-1"),
+        )
+
+
+def test_fre_events_explain_ex_sessions_by_ratio(store: DataStore) -> None:
+    write_fre(
+        store,
+        [
+            f"{PETR_CNPJ};2024-12-31;1;1;PETROBRAS;1;2024-04-15;Desdobramento;100;0;100;1000;0;1000",
+            f"{PETR_CNPJ};2024-12-31;1;1;PETROBRAS;2;2024-04-15;Bonificação;100;0;100;150;0;150",
+            "99.999.999/0001-99;2024-12-31;1;1;OTHER;3;2024-04-15;Grupamento;100;0;100;10;0;10",
+        ],
+    )
+    summary = build_corporate_actions(store, ActionOverrides.none())
+    events = table(store, EVENTS_FILE)
+    fre = events[events["source"] == "cvm_fre"]
+    assert fre[["ex_date", "event_type", "share_ratio", "status"]].values.tolist() == [
+        [DAY("2024-04-30"), "SPLIT", 10.0, "confirmed"]
+    ]
+    assert fre.iloc[0]["last_cum_date"] == DAY("2024-04-29")
+    assert "inferred" not in set(events["source"])
+    assert summary.inputs["fre_files"] == 1
+    reasons = table(store, UNRESOLVED_FILE).set_index("source")["reason"]
+    assert reasons["cvm_fre"].tolist() == [
+        "no ISIN for the CNPJ",
+        "no ex-session agrees with the ratio",
+    ]
+
+
+def test_a_split_in_b3_and_the_fre_is_confirmed_by_the_fre(store: DataStore) -> None:
+    write_fre(
+        store,
+        [f"{PETR_CNPJ};2024-12-31;1;1;PETROBRAS;1;2024-04-10;Desdobramento;100;0;100;200;0;200"],
+    )
+    build_corporate_actions(store, ActionOverrides.none())
+    events = table(store, EVENTS_FILE)
+    split = events[(events["event_type"] == "SPLIT") & (events["source"] == "b3_listed")]
+    assert split["confirmed_by"].tolist() == ["cvm_fre"]

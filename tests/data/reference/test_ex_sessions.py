@@ -15,6 +15,7 @@ from ibexQuant.data.reference.ex_sessions import (
     find_ex_sessions,
     match_by_date,
     match_by_distribution,
+    match_by_ratio,
 )
 
 PETR = isin("PETR")
@@ -224,3 +225,32 @@ def test_match_results_keep_the_index_of_the_events(runs: pd.DataFrame) -> None:
     )
     assert result.index.tolist() == [7, 3]
     assert result["outcome"].tolist() == [MatchOutcome.MATCHED, MatchOutcome.NO_EX_SESSION]
+
+
+# --- Matching by ratio ---
+
+
+def test_ratio_events_match_the_first_agreeing_ex_session_in_the_window() -> None:
+    ex = find_ex_sessions(
+        frame(
+            bar("2016-03-01", PETR, 100, close=10.0),
+            bar("2016-03-20", PETR, 101, open_=9.8, close=10.0),  # dividend, ratio 0.98
+            bar("2016-04-18", PETR, 102, open_=9.05, close=9.1),  # 10% bonus, 0.905
+            bar("2016-12-01", PETR, 103, open_=5.0, close=5.0),  # outside the window
+        )
+    )
+    result = match_by_ratio(
+        pd.Series([PETR, PETR, PETR, ODER]),
+        dates("2016-03-10", "2016-03-10", "2016-05-01", "2016-03-10"),
+        pd.Series([1.1, 3.0, 1.1, 1.1]),
+        ex,
+        window_days=180,
+        tolerance=0.1,
+    )
+    assert result["outcome"].tolist() == [
+        MatchOutcome.MATCHED,
+        MatchOutcome.NOT_TRADED,
+        MatchOutcome.NOT_TRADED,
+        MatchOutcome.NOT_TRADED,
+    ]
+    assert result["ex_session"].iloc[0] == pd.Timestamp("2016-04-18")

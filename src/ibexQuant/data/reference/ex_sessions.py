@@ -34,6 +34,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Final
 
+import numpy as np
 import pandas as pd
 
 ROUND_LOT: Final[int] = 10
@@ -241,6 +242,65 @@ def match_by_distribution(
     outcome = pd.Series(MatchOutcome.NOT_TRADED.value, index=current.index, dtype=object)
     outcome[matched] = MatchOutcome.MATCHED.value
     return _result(outcome, current["next_first_session"].where(matched), isins.index)
+
+
+def match_by_ratio(
+    isins: pd.Series,
+    after: pd.Series,
+    ratios: pd.Series,
+    ex_sessions: pd.DataFrame,
+    window_days: int,
+    tolerance: float,
+) -> pd.DataFrame:
+    """
+    Place events known by a date before their ex-date and a share ratio.
+
+    An event matches the first ex-session of its ISIN after ``after`` and
+    within ``window_days`` whose price ratio agrees with the share ratio:
+    ``|log(open_ratio * share_ratio)|`` at most ``tolerance`` and at most half
+    of ``|log(share_ratio)|``, so that a 10% bonus is not matched to an
+    ordinary 2% move (ADR 0013, H3.14).
+
+    Parameters
+    ----------
+    isins, after, ratios : pandas.Series
+        One element per event, aligned: ISIN, date after which the event goes
+        ex (an approval date), shares after per share before.
+    ex_sessions : pandas.DataFrame
+        Output of :func:`find_ex_sessions`.
+    window_days : int
+        Calendar days after ``after`` to look in.
+    tolerance : float
+        Largest log distance between price and share ratios.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns :data:`MATCH_COLUMNS`, aligned with the inputs; ``matched`` or
+        ``not_traded``.
+    """
+    events = pd.DataFrame(
+        {
+            "isin": isins.astype(str).to_numpy(),
+            "after": pd.to_datetime(after).to_numpy(),
+            "ratio": ratios.astype(float).to_numpy(),
+            "order": range(len(isins)),
+        }
+    )
+    sessions = ex_sessions[["isin", "session_date", "open_ratio"]].astype({"isin": "str"})
+    joined = events.merge(sessions, on="isin", how="inner")
+    inside = (joined["session_date"] > joined["after"]) & (
+        joined["session_date"] <= joined["after"] + pd.Timedelta(days=window_days)
+    )
+    distance = np.abs(np.log(joined["open_ratio"] * joined["ratio"]))
+    allowed = np.minimum(tolerance, np.abs(np.log(joined["ratio"])) / 2)
+    agrees = distance <= allowed
+    first = joined[inside & agrees].sort_values("session_date").drop_duplicates("order")
+    ex_session = first.set_index("order")["session_date"].reindex(range(len(isins)))
+    outcome = pd.Series(
+        np.where(ex_session.notna(), MatchOutcome.MATCHED.value, MatchOutcome.NOT_TRADED.value)
+    )
+    return _result(outcome, ex_session.reset_index(drop=True), isins.index)
 
 
 # --- Helpers ---

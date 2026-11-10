@@ -13,6 +13,7 @@ import pandas as pd
 from ibexQuant.data.store import DataStore
 
 PETR, VALE = "BRPETRACNOR9", "BRVALEACNOR0"
+PETR_CNPJ = "33.000.167/0001-01"
 DAY = pd.Timestamp
 
 # PETR3 sessions: (day, distribution number, open, close).
@@ -52,7 +53,7 @@ def bars_rows(
     ]
 
 
-def master_row(isin: str, ticker: str) -> dict[str, Any]:
+def master_row(isin: str, ticker: str, cnpj: str = "") -> dict[str, Any]:
     return {
         "security_id": isin,
         "ticker": ticker,
@@ -62,7 +63,7 @@ def master_row(isin: str, ticker: str) -> dict[str, Any]:
         "last_session": DAY("2024-05-03"),
         "sessions": 9,
         "link_rule": "founding",
-        "cnpj": "",
+        "cnpj": cnpj,
     }
 
 
@@ -93,7 +94,7 @@ def ledger_store(tmp_path: Path) -> DataStore:
     partition = store.curated("b3", "bars_daily", "year=2024", "part-0.parquet")
     partition.parent.mkdir(parents=True)
     bars.to_parquet(partition, index=False)
-    pd.DataFrame([master_row(PETR, "PETR3"), master_row(VALE, "VALE3")]).to_parquet(
+    pd.DataFrame([master_row(PETR, "PETR3", PETR_CNPJ), master_row(VALE, "VALE3")]).to_parquet(
         store.curated("b3", "security_master.parquet"), index=False
     )
 

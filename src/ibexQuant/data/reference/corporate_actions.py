@@ -52,6 +52,7 @@ from ibexQuant.data.ingestion.b3.listed_companies import (
     read_listed_companies,
     snapshot_folders,
 )
+from ibexQuant.data.ingestion.cvm.fre import fre_files, read_fre_stock_events
 from ibexQuant.data.reference.corporate_action_overrides import (
     Accepted,
     ActionOverrides,
@@ -65,6 +66,7 @@ from ibexQuant.data.reference.corporate_action_sources import (
     Source,
     bootstrap_events,
     credited_events,
+    fre_events,
     listed_events,
 )
 from ibexQuant.data.reference.errors import SecurityMasterNotBuiltError
@@ -77,6 +79,7 @@ from ibexQuant.data.reference.ex_sessions import (
     ex_sessions_from_runs,
     match_by_date,
     match_by_distribution,
+    match_by_ratio,
 )
 from ibexQuant.data.reference.security_master import SecurityMaster, implied_factor
 from ibexQuant.data.store import DataStore
@@ -91,6 +94,9 @@ SUMMARY_FILE: Final[str] = "corporate_actions.json"
 BOOTSTRAP_PARTS: Final[tuple[str, ...]] = ("bootstrap", "statusinvest_cash.parquet")
 SUMMARY_SCHEMA_VERSION: Final[int] = 1
 
+FRE_WINDOW_DAYS: Final[int] = 180
+FRE_TOLERANCE: Final[float] = 0.1
+"""FRE events go ex within this many days of approval, at this log distance at most (H3.14)."""
 JUMP_BAND: Final[tuple[float, float]] = (0.7, 1.4)
 """Open over previous close outside this band is a jump (H3.6)."""
 CASH_TOLERANCE: Final[float] = 0.005
@@ -269,9 +275,13 @@ def build_corporate_actions(store: DataStore, overrides: ActionOverrides) -> Led
     credited_paths = credited_files(store)
     credited = credited_events(read_earnings_credited(credited_paths))
     bootstrap, unresolved_bootstrap, bootstrap_path = _bootstrap(store, locator)
+    fre_paths = fre_files(store)
+    fre, unresolved_fre = fre_events(read_fre_stock_events(fre_paths), locator)
+    ex = ex_sessions_from_runs(runs)
+    fre, unplaced_fre = _place_fre(fre, ex, calendar)
 
     sources = [
-        frame for frame in (overrides.events, listed, credited, bootstrap) if not frame.empty
+        frame for frame in (overrides.events, listed, fre, credited, bootstrap) if not frame.empty
     ]
     events = (
         pd.concat(sources, ignore_index=True)
@@ -285,7 +295,6 @@ def build_corporate_actions(store: DataStore, overrides: ActionOverrides) -> Led
     events["rejected"] = _rejected(events, pending)
 
     security_of = dict(zip(master["isin"], master["security_id"], strict=False))
-    ex = ex_sessions_from_runs(runs)
     ex, inferred = _explain(ex, events[~events["rejected"]])
     if not inferred.empty:
         inferred["rejected"] = _rejected(inferred, pending)
@@ -300,7 +309,15 @@ def build_corporate_actions(store: DataStore, overrides: ActionOverrides) -> Led
     ex = _accept(ex, overrides.accepted)
     events = _finish_events(events, security_of)
     ex = _finish_ex_sessions(ex, events, security_of)
-    unresolved = pd.concat([unresolved_listed, unresolved_bootstrap], ignore_index=True)
+    unresolved = pd.concat(
+        [
+            frame
+            for frame in (unresolved_listed, unresolved_fre, unplaced_fre, unresolved_bootstrap)
+            if not frame.empty
+        ]
+        or [pd.DataFrame(columns=list(UNRESOLVED_COLUMNS))],
+        ignore_index=True,
+    )
 
     _write(store, events, ex, conflicts, unresolved)
     summary = LedgerSummary(
@@ -317,6 +334,7 @@ def build_corporate_actions(store: DataStore, overrides: ActionOverrides) -> Led
         inputs={
             "snapshots": [folder.name for folder in snapshots],
             "credited_files": len(credited_paths),
+            "fre_files": len(fre_paths),
             "bootstrap": _sha256(bootstrap_path),
             "overrides": overrides.sha256,
         },
@@ -352,6 +370,32 @@ def _bootstrap(store: DataStore, locator: IsinLocator) -> tuple[pd.DataFrame, pd
 
 
 # --- Placing ---
+
+
+def _place_fre(
+    fre: pd.DataFrame, ex: pd.DataFrame, calendar: pd.DatetimeIndex
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Give FRE events the ex-session their ratio points to; return the rest apart (H3.14)."""
+    if fre.empty:
+        return fre, pd.DataFrame(columns=list(UNRESOLVED_COLUMNS))
+    matched = match_by_ratio(
+        fre["isin"], fre["approved_on"], fre["share_ratio"], ex, FRE_WINDOW_DAYS, FRE_TOLERANCE
+    )
+    placed = matched["outcome"] == MatchOutcome.MATCHED.value
+    unplaced = pd.DataFrame(
+        {
+            "source": fre.loc[~placed, "source"],
+            "origin": fre.loc[~placed, "origin"],
+            "key": fre.loc[~placed, "isin"],
+            "last_cum_date": fre.loc[~placed, "approved_on"],
+            "reason": "no ex-session agrees with the ratio",
+        },
+        columns=list(UNRESOLVED_COLUMNS),
+    )
+    fre = fre[placed].copy()
+    positions = calendar.searchsorted(matched.loc[placed, "ex_session"], side="left") - 1
+    fre["last_cum_date"] = _sessions_at(calendar, positions)
+    return fre.reset_index(drop=True), unplaced.reset_index(drop=True)
 
 
 def _place(events: pd.DataFrame, runs: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.DataFrame:
