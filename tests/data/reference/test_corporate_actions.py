@@ -191,3 +191,26 @@ def test_overrides_that_match_nothing_are_errors(
 ) -> None:
     with pytest.raises(LedgerBuildError, match=message):
         build_corporate_actions(store, overrides(tmp_path, body))
+
+
+def test_an_event_after_the_last_session_has_no_ex_date(store: DataStore) -> None:
+    path = store.raw("b3", "listed_companies", "2026-11-10", "supplement", "PETR.json")
+    company = json.loads(path.read_text(encoding="utf-8"))
+    company[0]["cashDividends"].append(
+        {
+            "isinCode": PETR,
+            "label": "DIVIDENDO",
+            "rate": "0,47",
+            "lastDatePrior": "21/11/2026",
+            "approvedOn": "06/11/2026",
+            "paymentDate": "21/12/2026",
+            "relatedTo": "Anual/2026",
+        }
+    )
+    path.write_text(json.dumps(company), encoding="utf-8")
+    build_corporate_actions(store, ActionOverrides.none())
+    events = table(store, EVENTS_FILE)
+    future = events[events["last_cum_date"] == DAY("2026-11-21")].iloc[0]
+    assert pd.isna(future["ex_date"])
+    assert future["placement"] == "not_traded"
+    assert events["event_id"].is_unique

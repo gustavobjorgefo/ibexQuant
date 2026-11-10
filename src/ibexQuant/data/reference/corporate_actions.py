@@ -598,15 +598,16 @@ def _finish_events(events: pd.DataFrame, security_of: dict[str, str]) -> pd.Data
     occurrence = events.groupby(
         ["isin", "ex_date", "event_type", "source", "origin"], dropna=False
     ).cumcount()
+    # map(str), not astype(str): the string dtype keeps NaT and NaN as missing values.
     parts = zip(
-        events["isin"].astype(str),
-        events["ex_date"].astype(str),
-        events["event_type"].astype(str),
+        events["isin"].map(str),
+        events["ex_date"].map(str),
+        events["event_type"].map(str),
         events["cash_amount"].map("{:.10g}".format),
         events["share_ratio"].map("{:.10g}".format),
-        events["source"].astype(str),
-        events["origin"].astype(str),
-        occurrence.astype(str),
+        events["source"].map(str),
+        events["origin"].map(str),
+        occurrence.map(str),
         strict=True,
     )
     events["event_id"] = [hashlib.sha1("|".join(part).encode()).hexdigest()[:16] for part in parts]
