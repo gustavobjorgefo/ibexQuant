@@ -36,6 +36,11 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
 | StatusInvest gives only cash events, relabels history with today's ticker (`COGN3` from 2009, `MOTV3` from 2008), changes history between downloads (184 vs. 65 rows differ between two snapshots) and is nearly empty before 2007 | Two snapshots | H3.4 |
 | yfinance covers only the tickers it was asked for, mixes bonuses with splits and duplicates events (`AMER3`: four 100-to-1 reverse splits in five weeks of 2024, one in reality) | 272 rows, 85 tickers | H3.4 |
 | Changes with a large price jump (open / previous close below 0.7 or above 1.4) that neither StatusInvest nor yfinance explains: 77 in 2000, 13 to 30 a year recently | Exploration | H3.6 |
+| The first full download (880 issuer codes, 2026-11-10) answered for 781, including long-delisted issuers (SADIA, BANESPA, ARACRUZ, UNIBANCO); roots of renamed issuers answer empty, and their history sits under today's code (`BHIA` from 1997, `MOTV` from 2003). A root can be reused (`TRPL` now answers for a real-estate fund) | Snapshot 2026-11-10 | H3.3, H3.4 |
+| The cash history holds 31,133 rows from 1995 for 610 codes, with share class (`ON`, `PN`, `PNA`…, `UNT`) and no ISIN | Snapshot | H3.13 |
+| Rows quoted per 1,000 shares (`quotedPerShares` 1000, most events up to 2007) give value and closing price per 1,000 shares: the closing price is 1,000 times COTAHIST's, and the published yield matches. StatusInvest copied these values as per share | 1,926 rows against COTAHIST; 169 against StatusInvest | H3.5 |
+| Every issuer whose trading name contains `/` (`KLABIN S/A`, `AMBEV S/A`, `SADIA S/A`) returned an empty cash history | 16 issuers | H3.10 |
+| Stock events have nine labels; 247 rows deliver another asset (`assetIssued` ≠ `isinCode`): spin-offs (`MRVE3` holders received 7.215% of a `LOGG3`, `BRAP` 33.24% of a `VALE3`), mergers (`INCORPORACAO`, `LIGH` → `LIGT`) and bonuses in another class. A row whose asset is the ISIN itself with factor 100 only says the holder keeps the share | 1,032 rows, 1978–2026 | H3.5, H3.7 |
 | Holders of a delisted share received another existing share at a ratio: `LAME4` → `AMER3` (0.188964), `SOMA3` → `AZZA3`, `PCAR4` → `PCAR3`, `VIVT4` → `VIVT3`, `CESP6` → `AURE3`; the H2 pairs of the old IBrX notes that are true renames are all linked | Old IBrX notes against the security master | H3.7 |
 
 ## Decision
@@ -73,13 +78,13 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
   1. `manual` — reviewed entries in `corporate_actions.yaml` (H3.11).
   2. `b3_listed` — B3's listed-company service: stock events, subscriptions
      and recent cash events (`GetListedSupplementCompany`), and the cash
-     history (`GetListedCashDividends`), one JSON snapshot per issuer and
-     download (H3.10).
+     history from 1995 (`GetListedCashDividends`), one JSON snapshot per
+     issuer and download (H3.10). It covers delisted issuers too.
   3. `b3_credited` — the daily *Earnings credited* files; cash events from
      2026-06 on, and the check of values credited.
   4. `bootstrap` — cash events of StatusInvest, converted once into the
-     canonical input (H3.10) and frozen, used **only for ISINs absent from
-     every `b3_listed` snapshot**, and **only when they match an
+     canonical input (H3.10) and frozen, used **only for securities without
+     any `b3_listed` cash history**, and **only when they match an
      ex-session** (H3.3). An unmatched bootstrap event is dropped and
      counted.
   5. `inferred` — stock events read from an ex-session's price ratio (H3.6).
@@ -93,11 +98,23 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
   `CASH_DIVIDEND`, `INTEREST_ON_CAPITAL` (JCP, gross), `INCOME`
   (*rendimento*, the monetary update B3 lists beside a dividend),
   `RETURN_OF_CAPITAL`, `SPLIT`, `REVERSE_SPLIT`, `STOCK_BONUS`,
-  `SUBSCRIPTION`, `EXCHANGE` (H3.7), `CONVERSION` (H3.7), `REDEMPTION`
-  and `OTHER`. Cash events carry `cash_amount` (BRL per share). Stock events
+  `SPIN_OFF`, `SUBSCRIPTION`, `EXCHANGE` (H3.7), `CONVERSION` (H3.7),
+  `REDEMPTION` and `OTHER`. Cash events carry `cash_amount` (BRL per
+  share); a value quoted per 1,000 shares is divided by 1,000. Stock events
   carry `share_ratio`, the number of shares held after the event per share
-  held before: B3's `DESDOBRAMENTO` and `BONIFICACAO` factor `f` gives
-  `1 + f / 100`, and `GRUPAMENTO` gives `f` itself. Subscriptions carry the
+  held before. B3's factor `f` is a percentage, except for `GRUPAMENTO`,
+  where it is the multiplier itself:
+  - same asset: `DESDOBRAMENTO` → `SPLIT`, `BONIFICACAO` → `STOCK_BONUS`,
+    both `1 + f / 100`; `GRUPAMENTO` → `REVERSE_SPLIT`, `f`; `CIS RED CAP
+    QTD` and `REST CAP C/ RED` (fewer shares after a capital reduction) →
+    `REVERSE_SPLIT`, `f / 100`; `CIS RED CAP`, `INCORPORACAO` and
+    `REST CAP ACOES` with `f = 100` are not events (the holder keeps the
+    share), with another `f` an error; `RESG TOTAL RV` → `REDEMPTION`;
+  - another asset (`target_isin`): `CIS RED CAP`, `CIS RED CAP QTD`,
+    `REST CAP ACOES` and `BONIFICACAO` → `SPIN_OFF` with `f / 100` units of
+    the target per share, whose value H4 takes from the target's price;
+    `INCORPORACAO` → `CONVERSION`, `f / 100`; `GRUPAMENTO` → `CONVERSION`,
+    `f`. Subscriptions carry the
   percentage and the subscription price as published; whether they adjust
   prices is decided in H4. Fraction auctions (*leilão de frações*) are not
   events: they pay for rounding, not for a right. Each B3 label maps to one
@@ -136,7 +153,8 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
     conversion ends the old series; it does not adjust the target's prices.
     Its use is to carry a position from one security to another in a
     backtest.
-  Both come from the overrides. The build proposes them: every H2 candidate
+  B3 publishes conversions as stock events (H3.5); others come from the
+  overrides. The build proposes them: every H2 candidate
   that is `pending` or `superseded`, with its price ratio and
   `implied_factor`, is listed for review as a possible exchange or
   conversion.
@@ -184,6 +202,17 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
     repository and is not run again.
   The downloads are made by the B3 data collector (outside this
   repository); IbexQuant reads the files.
+
+### Placing B3's cash history
+
+- **H3.13 — From share class to ISIN.** A cash-history row names the issuer
+  code and the share class. The class maps to ISIN characters 7–11 (`ON` →
+  `ACNOR`, `PN` → `ACNPR`, `PNA` → `ACNPA`, … `UNT` → `CDAM`); the ISINs
+  in `bars_daily` that start with `BR`, the code and those characters are the
+  class's ISINs today, and the security master gives the ISIN of that
+  security in force on the row's data-com (renamed issuers report their old
+  history under the new code). A row that resolves to no ISIN, or to more
+  than one, is reported and not used.
 
 ### Overrides and commands
 
