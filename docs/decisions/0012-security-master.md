@@ -1,7 +1,7 @@
 # 0012 — Security master
 
-- Status: Proposed
-- Date: 2026-11-09
+- Status: Accepted
+- Date: 2026-11-10
 - Phase: H2
 
 ## Context
@@ -36,6 +36,7 @@ registration forms (FCA) from 2010 to 2026.
 | The CVM portal refuses connections from outside Brazil | Cloudflare block page from Japan; works through a Brazilian address | H2.8 |
 | A first build that let fund quotas and BDRs be rename candidates left 1,950 pairs pending: 799 fund quotas and 544 BDRs (listings that happened to end and start in the same week), 599 shares | First build on the real base | H2.4, rule 3 |
 | Among the share pairs, those with one partner on each side and a continuous price (new first open / old last close between 0.8 and 1.25) are 44, and read as known renames: ITAU4 → ITUB4, PRGA3 → BRFS3, CPNE5 → BRKM5, KROT3 → COGN3 (missing from the 2018 FCA). The others show ratios such as 0.003 or 850 | Same build | H2.7, H2.15 |
+| The review kept all 44 `likely` pairs and added `TIMP3` → `TIMS3`, which stayed `pending` because `GMAT3` listed on the same session (two partners); the rebuild linked 45 pairs by override, left 553 pending and changed 102 span identifiers as chains gained an older founding ISIN | Reviewed build, 2026-11-10 | H2.5, H2.7, H2.10, H2.11 |
 
 ## Decision
 
@@ -223,9 +224,14 @@ registration forms (FCA) from 2010 to 2026.
 - Research can ask for `BHIA3` from 2015 and get one series; a universe of
   tickers taken from an index composition (H5) resolves to securities on
   the composition date.
-- The first build will report pending candidates. Their number decides how
-  much review the base needs; companies that renamed and delisted before
-  2018 can only be linked by review.
+- The reviewed build links 45 pairs by override and leaves 553 pending,
+  most of them before 2000 or with prices that do not continue. Pairs that
+  are reorganizations of several securities into one (`TIET3`/`TIET4`/
+  `TIET11` → `AESB3`, `BELG3` → `ARCE3`) stay pending: they are conversions
+  for H3, which also re-evaluates candidates with an `implied_factor`.
+- The review lives in the private overrides repository; a wrong link is
+  undone by editing `ticker_links.yaml` and rebuilding, since the curated
+  tables are derived and COTAHIST stays untouched.
 - Corporate actions between securities (conversions, mergers, exchange
   ratios) are left to H3, which reads the master.
 - The provider keeps the shared `MarketDataProvider` contract: tickers in,

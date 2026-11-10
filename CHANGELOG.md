@@ -11,3 +11,13 @@
   daily-bar `MarketDataProvider` over the B3 base (ADR 0011).
 - `ibexquant data ingest cotahist (--year YEAR ... | --all)`.
 - `b3` optional extra (`pyarrow`), included in `research`.
+- `ibexQuant.data.reference`: security master (`build_security_master`, `SecurityMaster` with
+  `resolve`, `spans` and `ticker_at`), rename candidates with review statuses and
+  `implied_factor`, and `ticker_links.yaml` overrides (`load_link_overrides`) (ADR 0012).
+- `ibexQuant.data.ingestion.cvm`: FCA securities reader (`read_fca_securities`) used to
+  confirm renames by CNPJ.
+- `B3Provider(follow_renames=True)`: a ticker returns the full history of its security.
+- `ibexquant data build security-master [--no-overrides]` and
+  `ibexquant data review links [--status ...] [--yaml]`.
+- Overrides root resolution (`resolve_overrides_root`, `IBEXQUANT_OVERRIDES_ROOT`).
+- `pyyaml` in the `b3` extra.
