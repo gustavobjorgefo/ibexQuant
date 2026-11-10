@@ -56,7 +56,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"{entry.source_sha256[:12]}"
         )
 
-    bars = B3Provider(store).get_bars(
+    # Ticker by ticker, as ingested: renames are checked by the security master.
+    bars = B3Provider(store, follow_renames=False).get_bars(
         list(args.tickers), _DEFAULT_START, f"{args.end_year}-12-31", adjusted=False
     )
 

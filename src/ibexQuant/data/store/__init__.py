@@ -9,7 +9,12 @@ the :class:`DataStoreError` family.
 
 from __future__ import annotations
 
-from ibexQuant.data.store.config import DATA_ROOT_ENV_VAR, resolve_data_root
+from ibexQuant.data.store.config import (
+    DATA_ROOT_ENV_VAR,
+    OVERRIDES_ROOT_ENV_VAR,
+    resolve_data_root,
+    resolve_overrides_root,
+)
 from ibexQuant.data.store.data_store import DataStore, Zone
 from ibexQuant.data.store.errors import (
     DataLayoutError,
@@ -17,6 +22,7 @@ from ibexQuant.data.store.errors import (
     DataRootNotConfiguredError,
     DataRootNotFoundError,
     DataStoreError,
+    OverridesRootNotConfiguredError,
 )
 
 __all__ = [
@@ -27,6 +33,9 @@ __all__ = [
     "DataRootNotFoundError",
     "DataStore",
     "DataStoreError",
+    "OVERRIDES_ROOT_ENV_VAR",
+    "OverridesRootNotConfiguredError",
     "Zone",
     "resolve_data_root",
+    "resolve_overrides_root",
 ]

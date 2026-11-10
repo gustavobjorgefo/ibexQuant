@@ -22,8 +22,12 @@ class DataRootNotConfiguredError(DataStoreError, LookupError):
     """No explicit argument, environment variable or config entry names a data root."""
 
 
+class OverridesRootNotConfiguredError(DataStoreError, LookupError):
+    """No explicit argument, environment variable or config entry names the overrides root."""
+
+
 class DataRootConfigError(DataStoreError, ValueError):
-    """The data root is configured, but the configuration itself is invalid."""
+    """A root (data or overrides) is configured, but the configuration itself is invalid."""
 
 
 class DataRootNotFoundError(DataStoreError, FileNotFoundError):

@@ -62,7 +62,8 @@ def store(tmp_path: Path) -> DataStore:
 
 @pytest.fixture
 def provider(store: DataStore) -> B3Provider:
-    return B3Provider(store)
+    # Ticker by ticker, as in H1; following renames is tested in test_provider_renames.py.
+    return B3Provider(store, follow_renames=False)
 
 
 # --- Shape of the result ---
@@ -143,7 +144,9 @@ def test_same_ticker_twice_on_one_session_is_refused(tmp_path: Path) -> None:
     build_bars_daily(store, 2024)
 
     with pytest.raises(ValueError, match="More than one round-lot row"):
-        B3Provider(store).get_bars("PETR4", "2024-01-01", "2024-12-31", adjusted=False)
+        B3Provider(store, follow_renames=False).get_bars(
+            "PETR4", "2024-01-01", "2024-12-31", adjusted=False
+        )
 
 
 # --- Missing data ---
