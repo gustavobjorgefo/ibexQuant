@@ -24,6 +24,7 @@ from ibexQuant.data.reference.security_master import (
     BuildSummary,
     SecurityMaster,
     build_security_master,
+    implied_factor,
     is_isin,
     read_candidates,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "SecurityMasterNotBuiltError",
     "SecurityNotFoundError",
     "build_security_master",
+    "implied_factor",
     "is_isin",
     "load_link_overrides",
     "read_candidates",

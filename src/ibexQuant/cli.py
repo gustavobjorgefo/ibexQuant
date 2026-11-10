@@ -19,8 +19,9 @@ Commands
 ``ibexquant data build security-master [--no-overrides]``
     Build the security master from ``bars_daily``, the CVM forms and the
     override file (ADR 0012).
-``ibexquant data review links [--pending]``
-    Print the rename candidates with the prices around each change.
+``ibexquant data review links [--status STATUS ...] [--yaml]``
+    Print the rename candidates with the prices around each change, or, with
+    ``--yaml``, ready-to-paste ``ticker_links.yaml`` entries for them.
 
 Exit codes
 ----------
@@ -39,12 +40,27 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from ibexQuant.data.store import DataStore, DataStoreError, Zone, resolve_data_root
 
+if TYPE_CHECKING:
+    import pandas as pd
+
 EXIT_OK: Final[int] = 0
 EXIT_USAGE: Final[int] = 2
+
+# Mirrors ibexQuant.data.reference.security_master.STATUSES (a test keeps them equal);
+# importing it here would load pandas for every command, `data init` included.
+CANDIDATE_STATUSES: Final[tuple[str, ...]] = (
+    "linked_by_cnpj",
+    "linked_by_override",
+    "rejected",
+    "likely",
+    "pending",
+    "conflict",
+    "superseded",
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -152,7 +168,7 @@ def _data_build_security_master(args: argparse.Namespace) -> int:
 
 
 def _data_review_links(args: argparse.Namespace) -> int:
-    """Print the candidates, optionally only the pending ones."""
+    """Print the candidates, as a table or as override entries to paste."""
     import pandas as pd
 
     from ibexQuant.data.reference import SecurityMasterError, read_candidates
@@ -162,11 +178,16 @@ def _data_review_links(args: argparse.Namespace) -> int:
     except SecurityMasterError as error:
         print(f"error: {error}", file=sys.stderr)
         return EXIT_USAGE
-    if args.pending:
-        candidates = candidates[candidates["status"] == "pending"]
+    if args.status:
+        candidates = candidates[candidates["status"].isin(args.status)]
     if candidates.empty:
         print("No candidates.")
         return EXIT_OK
+
+    if args.yaml:
+        print(_as_yaml(candidates))
+        return EXIT_OK
+
     shown = candidates[
         [
             "status",
@@ -180,12 +201,33 @@ def _data_review_links(args: argparse.Namespace) -> int:
             "old_close",
             "new_open",
             "ratio",
+            "implied_factor",
         ]
     ]
     with pd.option_context("display.max_rows", None, "display.width", 200):
         print(shown.to_string(index=False))
     print(f"\n{len(shown)} candidate(s).")
     return EXIT_OK
+
+
+def _as_yaml(candidates: pd.DataFrame) -> str:
+    """Render candidates as ``links:`` entries of ``ticker_links.yaml``, to review and paste."""
+    import pandas as pd
+
+    lines = ["links:"]
+    for record in candidates.to_dict("records"):
+        last = str(record["from_last_session"])[:10]
+        first = str(record["to_first_session"])[:10]
+        old, new = record["from_ticker"], record["to_ticker"]
+        note = f"{old} -> {new}, price ratio {record['ratio']:.3f}"
+        if pd.notna(record["implied_factor"]):
+            note += f" (implied factor {record['implied_factor']:g}: split or exchange ratio?)"
+        lines += [
+            f"  - from: {record['from_isin']}  # {old}, last session {last}",
+            f"    to: {record['to_isin']}  # {new}, first session {first}",
+            f'    note: "{note}"',
+        ]
+    return "\n".join(lines)
 
 
 # --- Parser ---
@@ -228,7 +270,15 @@ def _build_parser() -> argparse.ArgumentParser:
     review = data_commands.add_parser("review", help="Review decisions waiting for a human.")
     subjects = review.add_subparsers(dest="subject", required=True, metavar="SUBJECT")
     links = subjects.add_parser("links", help="Rename candidates of the security master.")
-    links.add_argument("--pending", action="store_true", help="Only the pending candidates.")
+    links.add_argument(
+        "--status",
+        action="append",
+        choices=CANDIDATE_STATUSES,
+        help="Only candidates with this status (repeatable).",
+    )
+    links.add_argument(
+        "--yaml", action="store_true", help="Print ticker_links.yaml entries instead of a table."
+    )
     links.set_defaults(handler=_data_review_links)
 
     return parser

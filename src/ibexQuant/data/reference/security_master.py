@@ -30,6 +30,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import math
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -59,8 +60,23 @@ SUMMARY_SCHEMA_VERSION: Final[int] = 1
 MAX_GAP_SESSIONS: Final[int] = 5
 """Sessions allowed between the end of a listing and the start of its successor."""
 
-LINKABLE_TYPES: Final[frozenset[str]] = frozenset({"AC", "UN", "CT", "BD"})
-"""ISIN type codes (characters 7-8) of shares, units, fund quotas and BDRs."""
+LINKABLE_TYPES: Final[frozenset[str]] = frozenset({"AC", "UN"})
+"""ISIN type codes (characters 7-8) of shares and units. Fund quotas and BDRs keep
+their ISIN when their ticker changes (rule 1), so for them rule 3 finds only
+listings that happened to end and start in the same week."""
+
+LIKELY_RATIO: Final[tuple[float, float]] = (0.8, 1.25)
+"""Range of new first open / old last close that reads as a price continuing."""
+
+COMMON_FACTORS: Final[tuple[float, ...]] = tuple(
+    factor
+    for base in (2.0, 3.0, 4.0, 5.0, 8.0, 10.0, 20.0, 25.0, 50.0, 100.0, 1000.0)
+    for factor in (base, 1.0 / base)
+)
+"""Split and reverse-split factors that a price ratio is compared with."""
+
+FACTOR_TOLERANCE: Final[float] = 0.05
+"""Relative distance within which a ratio is read as one of :data:`COMMON_FACTORS`."""
 
 ROUND_LOT: Final[int] = 10
 
@@ -90,10 +106,12 @@ REJECTED: Final[str] = "rejected"
 PENDING: Final[str] = "pending"
 CONFLICT: Final[str] = "conflict"
 SUPERSEDED: Final[str] = "superseded"
+LIKELY: Final[str] = "likely"
 STATUSES: Final[tuple[str, ...]] = (
     LINKED_BY_CNPJ,
     LINKED_BY_OVERRIDE,
     REJECTED,
+    LIKELY,
     PENDING,
     CONFLICT,
     SUPERSEDED,
@@ -155,6 +173,31 @@ def is_isin(code: str) -> bool:
             value = value * 2 - 9 if value * 2 > 9 else value * 2
         total += value
     return (10 - total % 10) % 10 == int(code[11])
+
+
+def implied_factor(ratio: float) -> float | None:
+    """
+    Return the common split factor a price ratio is close to, if any.
+
+    A rename that happened together with a split or reverse split shows a
+    price jump of the split's size. The factor is a hint for review only: an
+    unrelated listing can show a round ratio by chance (H2.7).
+
+    Parameters
+    ----------
+    ratio : float
+        New first open divided by old last close.
+
+    Returns
+    -------
+    float or None
+        The nearest of :data:`COMMON_FACTORS` within :data:`FACTOR_TOLERANCE`
+        (relative), or ``None`` — also for a missing or non-positive ratio.
+    """
+    if not math.isfinite(ratio) or ratio <= 0:
+        return None
+    distance, factor = min((abs(math.log(ratio / factor)), factor) for factor in COMMON_FACTORS)
+    return factor if distance <= math.log1p(FACTOR_TOLERANCE) else None
 
 
 def build_security_master(store: DataStore, overrides: LinkOverrides) -> BuildSummary:
@@ -509,7 +552,7 @@ def _candidates(
     old_close = last_close.reindex(old_keys).to_numpy()
     new_open = first_open.reindex(new_keys).to_numpy()
 
-    return pd.DataFrame(
+    candidates = pd.DataFrame(
         {
             "from_isin": pairs["isin_old"].to_numpy(),
             "from_ticker": pairs["last_ticker_old"].to_numpy(),
@@ -524,7 +567,13 @@ def _candidates(
             "new_open": new_open,
             "ratio": new_open / old_close,
         }
-    ).sort_values(["to_first_session", "from_isin", "to_isin"], ignore_index=True)
+    )
+    candidates["implied_factor"] = pd.Series(
+        [implied_factor(float(ratio)) for ratio in candidates["ratio"]],
+        index=candidates.index,
+        dtype="float64",
+    )
+    return candidates.sort_values(["to_first_session", "from_isin", "to_isin"], ignore_index=True)
 
 
 def _check_rejections(rejections: Iterable[IsinPair], candidates: pd.DataFrame) -> None:
@@ -583,7 +632,26 @@ def _decide(
             result.append(SUPERSEDED)
         else:
             result.append(PENDING)
-    return result
+    return _mark_likely(candidates, result)
+
+
+def _mark_likely(candidates: pd.DataFrame, statuses: list[str]) -> list[str]:
+    """
+    Promote pending pairs that read as a rename to ``likely`` (still reviewed, H2.7).
+
+    A pair is likely when, among the pending pairs, neither listing has
+    another partner, and the price continues across the change.
+    """
+    pending = pd.Series(statuses, index=candidates.index) == PENDING
+    olds = candidates.loc[pending, "from_isin"]
+    news = candidates.loc[pending, "to_isin"]
+    alone = ~candidates["from_isin"].isin(olds[olds.duplicated()]) & ~candidates["to_isin"].isin(
+        news[news.duplicated()]
+    )
+    low, high = LIKELY_RATIO
+    continuous = candidates["ratio"].between(low, high)
+    likely = pending & alone & continuous
+    return [LIKELY if flag else status for flag, status in zip(likely, statuses, strict=True)]
 
 
 def _pairs(candidates: pd.DataFrame) -> list[tuple[str, str]]:
