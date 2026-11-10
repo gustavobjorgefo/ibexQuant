@@ -175,11 +175,15 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
     ISIN, ex-date, type, amount and source row), `security_id`, `isin`,
     `ex_date`, `last_cum_date`, `event_type`, `cash_amount`, `share_ratio`,
     `subscription_price`, `target_isin`, `payment_date`, `approved_on`,
-    `source`, `status` (`confirmed`, `inferred`, `rejected`),
+    `source`, `origin`, `label`, `status` (`confirmed`, `inferred`,
+    `rejected`, or `review` when the ISIN traded on both sides of the
+    data-com without a change, H3.3), `placement`, `ex_session`,
     `confirmed_by` (other sources that agree);
   - `ex_sessions.parquet`: the skeleton with its status (H3.6) and the
     matching `event_id`s;
   - `corporate_action_conflicts.parquet`;
+  - `corporate_action_unresolved.parquet`: source rows that could not be
+    placed on an ISIN (H3.13), with the reason;
   - `corporate_actions.json`: counts per source, type, status and year,
     dropped bootstrap events, unexplained ex-sessions per year, and the
     SHA-256 of every input.
@@ -217,10 +221,13 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
 ### Overrides and commands
 
 - **H3.11 — `corporate_actions.yaml`**, beside `ticker_links.yaml` in the
-  overrides root (H2.9): `events` (add an event, with every field and a
-  note), `rejections` (mark a source event or an inferred one as wrong, by
-  ISIN, ex-date, type and source), `accepted` (ex-sessions that need no
-  event), `exchanges` and `conversions` (H3.7). Every entry has a note.
+  overrides root (H2.9), optional: `events` (add an event of any type,
+  exchanges and conversions (H3.7) included, by ISIN, data-com, type,
+  amount and, for spin-offs, exchanges and conversions, `target_isin`),
+  `rejections` (mark a source event or an inferred one as wrong, by ISIN,
+  ex-date, type and source), `accepted` (ex-sessions that need no event).
+  Every entry has a note. A rejection or accepted ex-session that matches
+  nothing stops the build, so the file never carries stale decisions.
 - **H3.12 — Command line.**
   - `ibexquant data build corporate-actions [--no-overrides]` builds the
     tables and prints the summary;

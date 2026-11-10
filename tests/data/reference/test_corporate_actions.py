@@ -7,11 +7,15 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 import pytest
+from support.ledger import DAY, PETR, VALE, ledger_store
 
+from ibexQuant.data.reference.corporate_action_overrides import (
+    ActionOverrides,
+    load_action_overrides,
+)
 from ibexQuant.data.reference.corporate_actions import (
     CONFLICTS_FILE,
     EVENT_COLUMNS,
@@ -19,157 +23,22 @@ from ibexQuant.data.reference.corporate_actions import (
     EX_SESSIONS_FILE,
     SUMMARY_FILE,
     UNRESOLVED_FILE,
+    LedgerBuildError,
     _close,
     build_corporate_actions,
 )
 from ibexQuant.data.reference.errors import SecurityMasterNotBuiltError
 from ibexQuant.data.store import DataStore
 
-PETR, VALE = "BRPETRACNOR9", "BRVALEACNOR0"
-DAY = pd.Timestamp
-
-# PETR3 sessions: (day, distribution number, open, close).
-PETR_SESSIONS: list[tuple[str, int, float, float]] = [
-    ("2024-04-22", 100, 10.0, 10.0),
-    ("2024-04-23", 100, 10.0, 10.0),
-    ("2024-04-24", 101, 9.5, 10.0),  # dividend, data-com 04-23
-    ("2024-04-25", 101, 10.0, 10.0),
-    ("2024-04-26", 102, 5.1, 5.1),  # split 2 for 1, data-com 04-25
-    ("2024-04-29", 102, 10.2, 10.2),
-    ("2024-04-30", 103, 1.02, 1.0),  # no source: open/close 0.1 -> inferred split 10
-    ("2024-05-02", 104, 0.99, 1.0),  # no source, small move -> unexplained
-    ("2024-05-03", 105, 0.3, 0.3),  # no source, 0.3 -> no common ratio -> jump
-]
-VALE_SESSIONS: list[tuple[str, int, float, float]] = [
-    ("2024-04-22", 200, 60.0, 60.0),
-    ("2024-04-23", 201, 58.0, 58.0),  # bootstrap dividend, data-com 04-22
-    ("2024-04-24", 201, 58.0, 58.0),
-]
-
-
-def bars_rows(
-    isin: str, ticker: str, sessions: list[tuple[str, int, float, float]]
-) -> list[dict[str, Any]]:
-    return [
-        {
-            "session_date": DAY(day),
-            "ticker": ticker,
-            "isin": isin,
-            "market_type": 10,
-            "distribution_number": number,
-            "open": open_,
-            "close": close,
-            "volume_shares": 1000,
-        }
-        for day, number, open_, close in sessions
-    ]
-
-
-def master_row(isin: str, ticker: str) -> dict[str, Any]:
-    return {
-        "security_id": isin,
-        "ticker": ticker,
-        "isin": isin,
-        "market_type": 10,
-        "first_session": DAY("2024-04-22"),
-        "last_session": DAY("2024-05-03"),
-        "sessions": 9,
-        "link_rule": "founding",
-        "cnpj": "",
-    }
-
-
-def write_json(path: Path, content: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(content), encoding="utf-8")
-
-
-def history(value: str, last_cum: str) -> dict[str, str]:
-    return {
-        "typeStock": "ON",
-        "dateApproval": "01/04/2024",
-        "valueCash": value,
-        "ratio": "1",
-        "corporateAction": "DIVIDENDO",
-        "lastDatePriorEx": last_cum,
-        "closingPricePriorExDate": "10,00",
-        "quotedPerShares": "1",
-    }
-
 
 @pytest.fixture
 def store(tmp_path: Path) -> DataStore:
-    store = DataStore.initialize(tmp_path / "data")
-    bars = pd.DataFrame(
-        bars_rows(PETR, "PETR3", PETR_SESSIONS) + bars_rows(VALE, "VALE3", VALE_SESSIONS)
-    )
-    partition = store.curated("b3", "bars_daily", "year=2024", "part-0.parquet")
-    partition.parent.mkdir(parents=True)
-    bars.to_parquet(partition, index=False)
-    pd.DataFrame([master_row(PETR, "PETR3"), master_row(VALE, "VALE3")]).to_parquet(
-        store.curated("b3", "security_master.parquet"), index=False
-    )
-
-    snapshot = store.raw("b3", "listed_companies", "2026-11-10")
-    company = {
-        "tradingName": "PETROBRAS",
-        "cashDividends": [],
-        "subscriptions": [],
-        "stockDividends": [
-            {
-                "assetIssued": PETR,
-                "factor": "100,00000000000",
-                "approvedOn": "01/04/2024",
-                "isinCode": PETR,
-                "label": "DESDOBRAMENTO",
-                "lastDatePrior": "25/04/2024",
-            }
-        ],
-    }
-    write_json(snapshot / "supplement" / "PETR.json", [company])
-    write_json(
-        snapshot / "cash_dividends" / "PETR" / "page-001.json",
-        {
-            "page": {"totalPages": 1},
-            "results": [
-                history("0,50", "23/04/2024"),
-                history("0,10", "22/04/2024"),  # PETR3 traded 04-23 under the same number
-            ],
-        },
-    )
-
-    credited = store.raw("b3", "earnings_credited", "2024", "2024-05-10.csv")
-    credited.parent.mkdir(parents=True)
-    credited.write_text(
-        "Emissor;Código ISIN;Tipo de provento;Data de aprovação;Valor (R$);Data de crédito\n"
-        f"PETROBRAS;{PETR} 100;DIVIDENDO;-;0,5001;10/05/2024\n"
-        f"PETROBRAS;{PETR} 100;DIVIDENDO;-;0,70;10/05/2024\n",
-        encoding="utf-8",
-    )
-
-    bootstrap = store.raw("bootstrap", "statusinvest_cash.parquet")
-    bootstrap.parent.mkdir(parents=True)
-    pd.DataFrame(
-        {
-            "ticker": ["PETR3", "VALE3", "VALE3", "XPTO3"],
-            "last_cum_date": [
-                DAY("2024-04-23"),
-                DAY("2024-04-22"),
-                DAY("2024-04-23"),
-                DAY("2024-04-22"),
-            ],
-            "event_type": ["CASH_DIVIDEND"] * 4,
-            "cash_amount": [0.5, 2.0, 1.0, 1.0],
-            "payment_date": [pd.NaT] * 4,
-            "retrieved_on": [DAY("2025-12-18")] * 4,
-        }
-    ).to_parquet(bootstrap, index=False)
-    return store
+    return ledger_store(tmp_path)
 
 
 @pytest.fixture
 def built(store: DataStore) -> DataStore:
-    build_corporate_actions(store)
+    build_corporate_actions(store, ActionOverrides.none())
     return store
 
 
@@ -233,7 +102,7 @@ def test_unresolved_rows_and_dropped_bootstrap_are_reported(built: DataStore) ->
 
 def test_rebuilding_gives_the_same_tables(built: DataStore) -> None:
     first = table(built, EVENTS_FILE)
-    build_corporate_actions(built)
+    build_corporate_actions(built, ActionOverrides.none())
     pd.testing.assert_frame_equal(first, table(built, EVENTS_FILE))
 
 
@@ -245,7 +114,7 @@ def test_a_build_without_sources_lists_the_skeleton(store: DataStore) -> None:
     ):
         for child in sorted(path.rglob("*"), reverse=True):
             child.unlink() if child.is_file() else child.rmdir()
-    summary = build_corporate_actions(store)
+    summary = build_corporate_actions(store, ActionOverrides.none())
     assert summary.events["source"] == {"inferred": 2}
     assert summary.ex_sessions == {"inferred": 2, "unexplained": 3, "unexplained_jump": 1}
     assert summary.inputs["bootstrap"] is None
@@ -254,7 +123,7 @@ def test_a_build_without_sources_lists_the_skeleton(store: DataStore) -> None:
 
 def test_no_bars_is_an_error(tmp_path: Path) -> None:
     with pytest.raises(SecurityMasterNotBuiltError, match="bars_daily"):
-        build_corporate_actions(DataStore.initialize(tmp_path / "data"))
+        build_corporate_actions(DataStore.initialize(tmp_path / "data"), ActionOverrides.none())
 
 
 @pytest.mark.parametrize(
@@ -265,3 +134,60 @@ def test_amounts_match_within_a_relative_tolerance(
     value: float, reference: float, expected: bool
 ) -> None:
     assert _close(value, reference, 0.005) is expected
+
+
+# --- Overrides ---
+
+
+def overrides(tmp_path: Path, body: str) -> ActionOverrides:
+    root = tmp_path / "overrides"
+    root.mkdir(exist_ok=True)
+    (root / "corporate_actions.yaml").write_text("version: 1\n" + body, encoding="utf-8")
+    return load_action_overrides(root)
+
+
+DECISIONS = f"""\
+events:
+  - {{isin: {PETR}, last_cum_date: 2024-04-30, type: CASH_DIVIDEND, cash_amount: 0.01,
+     note: "company notice"}}
+rejections:
+  - {{isin: {PETR}, ex_date: 2024-04-30, type: SPLIT, source: inferred, note: "bad print"}}
+accepted:
+  - {{isin: {PETR}, session: 2024-05-03, note: "auction"}}
+"""
+
+
+def test_overrides_add_reject_and_accept(store: DataStore, tmp_path: Path) -> None:
+    summary = build_corporate_actions(store, overrides(tmp_path, DECISIONS))
+    events = table(store, EVENTS_FILE)
+    manual = events[events["source"] == "manual"].iloc[0]
+    assert (manual["ex_date"], manual["status"]) == (DAY("2024-05-02"), "confirmed")
+    inferred = events[events["source"] == "inferred"].iloc[0]
+    assert inferred["status"] == "rejected"
+    ex = table(store, EX_SESSIONS_FILE).set_index("session_date")
+    assert ex.loc[DAY("2024-05-02"), "status"] == "explained"
+    assert ex.loc[DAY("2024-04-30"), "status"] == "unexplained_jump"
+    assert ex.loc[DAY("2024-05-03"), "status"] == "accepted"
+    assert summary.inputs["overrides"] is not None
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (
+            f"rejections:\n  - {{isin: {PETR}, ex_date: 2024-04-29, type: SPLIT, "
+            "source: inferred, note: x}\n",
+            "matches no event",
+        ),
+        (
+            f"accepted:\n  - {{isin: {PETR}, session: 2024-04-29, note: x}}\n",
+            "not in the skeleton",
+        ),
+        (f"accepted:\n  - {{isin: {PETR}, session: 2024-04-24, note: x}}\n", "already explained"),
+    ],
+)
+def test_overrides_that_match_nothing_are_errors(
+    store: DataStore, tmp_path: Path, body: str, message: str
+) -> None:
+    with pytest.raises(LedgerBuildError, match=message):
+        build_corporate_actions(store, overrides(tmp_path, body))

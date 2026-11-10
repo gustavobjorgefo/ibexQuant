@@ -22,6 +22,14 @@ Commands
 ``ibexquant data review links [--status STATUS ...] [--yaml]``
     Print the rename candidates with the prices around each change, or, with
     ``--yaml``, ready-to-paste ``ticker_links.yaml`` entries for them.
+``ibexquant data build corporate-actions [--no-overrides]``
+    Build the corporate actions ledger from ``bars_daily``, the security
+    master, B3's raw files, the frozen bootstrap and the override file
+    (ADR 0013).
+``ibexquant data review events [--status STATUS ...] [--yaml]``
+    Print the ex-sessions waiting for review (by default inferred splits and
+    unexplained jumps) with the prices around them, or, with ``--yaml``,
+    ready-to-edit ``corporate_actions.yaml`` entries.
 
 Exit codes
 ----------
@@ -61,6 +69,16 @@ CANDIDATE_STATUSES: Final[tuple[str, ...]] = (
     "conflict",
     "superseded",
 )
+# Mirrors ibexQuant.data.reference.corporate_actions.EX_SESSION_STATUSES (a test keeps
+# them equal).
+EX_SESSION_STATUSES: Final[tuple[str, ...]] = (
+    "explained",
+    "inferred",
+    "unexplained_jump",
+    "unexplained",
+    "accepted",
+)
+REVIEWED_BY_DEFAULT: Final[tuple[str, ...]] = ("inferred", "unexplained_jump")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -230,6 +248,135 @@ def _as_yaml(candidates: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def _data_build_corporate_actions(args: argparse.Namespace) -> int:
+    """Build the ledger and print its summary."""
+    from ibexQuant.data.ingestion.b3.earnings_credited import EarningsCreditedFormatError
+    from ibexQuant.data.ingestion.b3.listed_companies import ListedCompaniesFormatError
+    from ibexQuant.data.reference import OverridesFormatError, SecurityMasterError
+    from ibexQuant.data.reference.corporate_action_overrides import (
+        ActionOverrides,
+        load_action_overrides,
+    )
+    from ibexQuant.data.reference.corporate_action_sources import BootstrapFormatError
+    from ibexQuant.data.reference.corporate_actions import (
+        LedgerBuildError,
+        build_corporate_actions,
+    )
+    from ibexQuant.data.reference.event_types import StockFactorError, UnknownLabelError
+    from ibexQuant.data.store import resolve_overrides_root
+
+    store = DataStore.open()
+    try:
+        overrides = (
+            ActionOverrides.none()
+            if args.no_overrides
+            else load_action_overrides(resolve_overrides_root())
+        )
+        summary = build_corporate_actions(store, overrides)
+    except (
+        OverridesFormatError,
+        SecurityMasterError,
+        LedgerBuildError,
+        UnknownLabelError,
+        StockFactorError,
+        ListedCompaniesFormatError,
+        EarningsCreditedFormatError,
+        BootstrapFormatError,
+    ) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+
+    def line(title: str, counts: dict[str, int]) -> None:
+        print(f"{title}: " + ", ".join(f"{key} {count}" for key, count in counts.items()))
+
+    line("events by source", summary.events["source"])
+    line("events by status", summary.events["status"])
+    line("ex-sessions", summary.ex_sessions)
+    print(f"conflicts: {summary.conflicts}")
+    line("unresolved", summary.unresolved)
+    line("bootstrap dropped", summary.bootstrap_dropped)
+    snapshots = summary.inputs["snapshots"]
+    names = ", ".join(str(name) for name in snapshots) if isinstance(snapshots, list) else ""
+    print(f"snapshots: {names or 'none'}")
+    if summary.inputs["overrides"] is None:
+        print("built without corporate_actions.yaml")
+    return EXIT_OK
+
+
+def _data_review_events(args: argparse.Namespace) -> int:
+    """Print the ex-sessions to review, as a table or as override entries to edit."""
+    import pandas as pd
+
+    from ibexQuant.data.reference.corporate_actions import LedgerNotBuiltError, read_ledger
+
+    try:
+        events, ex = read_ledger(DataStore.open())
+    except LedgerNotBuiltError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    statuses = args.status or list(REVIEWED_BY_DEFAULT)
+    shown = ex[ex["status"].isin(statuses)]
+    unplaced = events[events["status"] == "review"]
+    if shown.empty and unplaced.empty:
+        print("Nothing to review.")
+        return EXIT_OK
+
+    if args.yaml:
+        print(_events_as_yaml(shown, events))
+        return EXIT_OK
+
+    columns = [
+        "status",
+        "ticker",
+        "isin",
+        "previous_session",
+        "session_date",
+        "previous_close",
+        "open",
+        "open_ratio",
+    ]
+    with pd.option_context("display.max_rows", None, "display.width", 200):
+        if not shown.empty:
+            print(shown[columns].to_string(index=False))
+            print(f"\n{len(shown)} ex-session(s).")
+        if not unplaced.empty:
+            print("\nEvents whose ISIN traded on both sides of the data-com without a change:")
+            print(
+                unplaced[
+                    ["isin", "last_cum_date", "event_type", "cash_amount", "source"]
+                ].to_string(index=False)
+            )
+    return EXIT_OK
+
+
+def _events_as_yaml(ex: pd.DataFrame, events: pd.DataFrame) -> str:
+    """Render ex-sessions as ``corporate_actions.yaml`` entries, to review and edit."""
+    inferred = events[events["status"] == "inferred"].set_index(["isin", "ex_date"])
+    rejections, accepted = ["rejections:"], ["accepted:"]
+    for record in ex.to_dict("records"):
+        day = str(record["session_date"])[:10]
+        where = (
+            f"{record['ticker']}, previous close {record['previous_close']:g} on "
+            f"{str(record['previous_session'])[:10]}, open {record['open']:g} "
+            f"(ratio {record['open_ratio']:.4f})"
+        )
+        if record["status"] == "inferred":
+            ratio = inferred.loc[(record["isin"], record["session_date"]), "share_ratio"]
+            kind = inferred.loc[(record["isin"], record["session_date"]), "event_type"]
+            rejections += [
+                f"  # inferred {kind} {float(ratio):g}: {where}",
+                f"  # - {{isin: {record['isin']}, ex_date: {day}, type: {kind}, "
+                'source: inferred, note: "TODO"}',
+            ]
+        else:
+            accepted += [
+                f"  # {where}",
+                f'  - {{isin: {record["isin"]}, session: {day}, note: "TODO"}}',
+            ]
+    parts = [block for block in (rejections, accepted) if len(block) > 1]
+    return "\n".join("\n".join(block) for block in parts)
+
+
 # --- Parser ---
 
 
@@ -266,6 +413,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Build without ticker_links.yaml (candidates stay pending).",
     )
     master.set_defaults(handler=_data_build_security_master)
+    actions = targets.add_parser("corporate-actions", help="The corporate actions ledger.")
+    actions.add_argument(
+        "--no-overrides",
+        action="store_true",
+        help="Build without corporate_actions.yaml.",
+    )
+    actions.set_defaults(handler=_data_build_corporate_actions)
 
     review = data_commands.add_parser("review", help="Review decisions waiting for a human.")
     subjects = review.add_subparsers(dest="subject", required=True, metavar="SUBJECT")
@@ -280,5 +434,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--yaml", action="store_true", help="Print ticker_links.yaml entries instead of a table."
     )
     links.set_defaults(handler=_data_review_links)
+    review_events = subjects.add_parser("events", help="Ex-sessions of the ledger to review.")
+    review_events.add_argument(
+        "--status",
+        action="append",
+        choices=EX_SESSION_STATUSES,
+        help="Only ex-sessions with this status (repeatable; default: "
+        + ", ".join(REVIEWED_BY_DEFAULT)
+        + ").",
+    )
+    review_events.add_argument(
+        "--yaml",
+        action="store_true",
+        help="Print corporate_actions.yaml entries instead of a table.",
+    )
+    review_events.set_defaults(handler=_data_review_events)
 
     return parser

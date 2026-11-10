@@ -52,6 +52,11 @@ from ibexQuant.data.ingestion.b3.listed_companies import (
     read_listed_companies,
     snapshot_folders,
 )
+from ibexQuant.data.reference.corporate_action_overrides import (
+    Accepted,
+    ActionOverrides,
+    Rejection,
+)
 from ibexQuant.data.reference.corporate_action_sources import (
     SOURCE_EVENT_COLUMNS,
     SOURCE_PRIORITY,
@@ -131,6 +136,14 @@ CONFLICT_COLUMNS: Final[tuple[str, ...]] = (
 )
 
 
+class LedgerBuildError(ValueError):
+    """An override does not match the data it decides on."""
+
+
+class LedgerNotBuiltError(FileNotFoundError):
+    """The ledger tables do not exist yet."""
+
+
 class EventStatus:
     """Values of the ledger's ``status`` column (H3.9)."""
 
@@ -148,6 +161,39 @@ class ExSessionStatus:
     UNEXPLAINED_JUMP: Final[str] = "unexplained_jump"
     UNEXPLAINED: Final[str] = "unexplained"
     ACCEPTED: Final[str] = "accepted"
+
+
+EX_SESSION_STATUSES: Final[tuple[str, ...]] = (
+    ExSessionStatus.EXPLAINED,
+    ExSessionStatus.INFERRED,
+    ExSessionStatus.UNEXPLAINED_JUMP,
+    ExSessionStatus.UNEXPLAINED,
+    ExSessionStatus.ACCEPTED,
+)
+
+
+def read_ledger(store: DataStore) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Load the ledger events and the ex-session skeleton.
+
+    Returns
+    -------
+    tuple[pandas.DataFrame, pandas.DataFrame]
+        ``corporate_actions.parquet`` and ``ex_sessions.parquet``.
+
+    Raises
+    ------
+    LedgerNotBuiltError
+        If the ledger was never built.
+    """
+    folder = store.curated(*CURATED_PARTS)
+    paths = (folder / EVENTS_FILE, folder / EX_SESSIONS_FILE)
+    if not all(path.is_file() for path in paths):
+        raise LedgerNotBuiltError(
+            "No corporate actions ledger yet. Run `ibexquant data build corporate-actions`."
+        )
+    events, ex = (pd.read_parquet(path) for path in paths)
+    return events, ex
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,7 +235,7 @@ class LedgerSummary:
 # --- Build ---
 
 
-def build_corporate_actions(store: DataStore) -> LedgerSummary:
+def build_corporate_actions(store: DataStore, overrides: ActionOverrides) -> LedgerSummary:
     """
     Build the ledger tables in ``curated/b3/``.
 
@@ -197,6 +243,9 @@ def build_corporate_actions(store: DataStore) -> LedgerSummary:
     ----------
     store : DataStore
         The data store.
+    overrides : ActionOverrides
+        Decisions of ``corporate_actions.yaml`` (``ActionOverrides.none()``
+        to build without them).
 
     Returns
     -------
@@ -206,6 +255,8 @@ def build_corporate_actions(store: DataStore) -> LedgerSummary:
     ------
     SecurityMasterNotBuiltError
         If ``bars_daily`` or the security master is missing.
+    LedgerBuildError
+        If a rejection or an accepted ex-session matches nothing.
     """
     bars = _load_bars(store)
     runs = distribution_runs(bars)
@@ -219,7 +270,9 @@ def build_corporate_actions(store: DataStore) -> LedgerSummary:
     credited = credited_events(read_earnings_credited(credited_paths))
     bootstrap, unresolved_bootstrap, bootstrap_path = _bootstrap(store, locator)
 
-    sources = [frame for frame in (listed, credited, bootstrap) if not frame.empty]
+    sources = [
+        frame for frame in (overrides.events, listed, credited, bootstrap) if not frame.empty
+    ]
     events = (
         pd.concat(sources, ignore_index=True)
         if sources
@@ -228,11 +281,23 @@ def build_corporate_actions(store: DataStore) -> LedgerSummary:
     events = _place(events, runs, calendar)
     events, dropped = _filter_bootstrap(events)
     events, conflicts = _merge_sources(events)
+    pending = list(overrides.rejections)
+    events["rejected"] = _rejected(events, pending)
 
     security_of = dict(zip(master["isin"], master["security_id"], strict=False))
     ex = ex_sessions_from_runs(runs)
-    ex, inferred = _explain(ex, events)
-    events = pd.concat([events, inferred], ignore_index=True) if not inferred.empty else events
+    ex, inferred = _explain(ex, events[~events["rejected"]])
+    if not inferred.empty:
+        inferred["rejected"] = _rejected(inferred, pending)
+        ex = _unexplain(ex, inferred[inferred["rejected"]])
+        events = pd.concat([events, inferred], ignore_index=True)
+    if pending:
+        first = pending[0]
+        raise LedgerBuildError(
+            f"Rejection of {first.event_type} {first.isin} {first.ex_date.date()} "
+            f"({first.source}) matches no event."
+        )
+    ex = _accept(ex, overrides.accepted)
     events = _finish_events(events, security_of)
     ex = _finish_ex_sessions(ex, events, security_of)
     unresolved = pd.concat([unresolved_listed, unresolved_bootstrap], ignore_index=True)
@@ -253,6 +318,7 @@ def build_corporate_actions(store: DataStore) -> LedgerSummary:
             "snapshots": [folder.name for folder in snapshots],
             "credited_files": len(credited_paths),
             "bootstrap": _sha256(bootstrap_path),
+            "overrides": overrides.sha256,
         },
         built_at=datetime.now(UTC).isoformat(timespec="seconds"),
     )
@@ -412,6 +478,48 @@ def _close(value: float, reference: float, tolerance: float) -> bool:
     return abs(value - reference) <= tolerance * max(abs(reference), 1e-12)
 
 
+# --- Overrides ---
+
+
+def _rejected(events: pd.DataFrame, pending: list[Rejection]) -> pd.Series:
+    """Mark the events each pending rejection names, removing the rejections used."""
+    marked = pd.Series(False, index=events.index)
+    for rejection in list(pending):
+        hit = (
+            (events["isin"] == rejection.isin)
+            & (events["ex_date"] == rejection.ex_date)
+            & (events["event_type"] == rejection.event_type)
+            & (events["source"] == rejection.source)
+        )
+        if hit.any():
+            marked |= hit
+            pending.remove(rejection)
+    return marked
+
+
+def _unexplain(ex: pd.DataFrame, rejected: pd.DataFrame) -> pd.DataFrame:
+    keys = set(zip(rejected["isin"], rejected["ex_session"], strict=True))
+    hit = [key in keys for key in zip(ex["isin"], ex["session_date"], strict=True)]
+    status = ex["status"].where(~pd.Series(hit, index=ex.index), ExSessionStatus.UNEXPLAINED_JUMP)
+    return ex.assign(status=status)
+
+
+def _accept(ex: pd.DataFrame, accepted: tuple[Accepted, ...]) -> pd.DataFrame:
+    status = ex["status"].copy()
+    for entry in accepted:
+        hit = (ex["isin"] == entry.isin) & (ex["session_date"] == entry.session)
+        if not hit.any():
+            raise LedgerBuildError(
+                f"Accepted ex-session {entry.isin} {entry.session.date()} is not in the skeleton."
+            )
+        if (status[hit] == ExSessionStatus.EXPLAINED).all():
+            raise LedgerBuildError(
+                f"Accepted ex-session {entry.isin} {entry.session.date()} is already explained."
+            )
+        status[hit] = ExSessionStatus.ACCEPTED
+    return ex.assign(status=status)
+
+
 # --- Explaining the skeleton ---
 
 
@@ -468,16 +576,17 @@ def _explain(ex: pd.DataFrame, events: pd.DataFrame) -> tuple[pd.DataFrame, pd.D
 
 
 def _finish_events(events: pd.DataFrame, security_of: dict[str, str]) -> pd.DataFrame:
+    rejected = events["rejected"].fillna(False).astype(bool)
     events = events.reindex(columns=[*EVENT_COLUMNS, "anchor_date"]).copy()
     events["security_id"] = events["isin"].map(security_of).fillna("")
-    events["status"] = np.where(
-        events["source"] == Source.INFERRED.value,
-        EventStatus.INFERRED,
-        np.where(
+    events["status"] = np.select(
+        [
+            rejected,
+            events["source"] == Source.INFERRED.value,
             events["placement"] == MatchOutcome.NO_EX_SESSION.value,
-            EventStatus.REVIEW,
-            EventStatus.CONFIRMED,
-        ),
+        ],
+        [EventStatus.REJECTED, EventStatus.INFERRED, EventStatus.REVIEW],
+        EventStatus.CONFIRMED,
     )
     for column in ("ex_date", "last_cum_date", "payment_date", "approved_on", "ex_session"):
         events[column] = pd.to_datetime(events[column]).astype("datetime64[ns]")
