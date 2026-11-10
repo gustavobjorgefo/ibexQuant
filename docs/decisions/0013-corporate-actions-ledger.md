@@ -1,0 +1,235 @@
+# 0013 — Corporate actions ledger
+
+- Status: Proposed
+- Date: 2026-11-10
+- Phase: H3
+
+## Context
+
+H1 stores raw prices and H2 joins listings into securities. A raw series
+still jumps at every dividend, split, bonus issue and exchange: `MGLU3`
+opens at a quarter of its previous close on 2020-10-14, and a backtest that
+reads that as a −75% day is wrong. H4 adjusts prices, and it needs, for each
+security, every ex-date with what happened on it. H3 records that ledger.
+
+Two goals shape the sources. The ledger must rest on official data, and the
+third-party data used by the old pipeline (StatusInvest, yfinance) must be
+avoided wherever official data exists, and frozen where it does not.
+
+### What the data shows
+
+The exploration covered the round-lot shares and units of `bars_daily`
+(1995–2026, 26,879 changes of distribution number over AC, UN and CD
+ISINs), 65 daily *Earnings credited* files (2026-06-29 to 2026-11-06), the
+B3 listed-company data of four issuers (WEGE, ITSA, MGLU, PETR), two
+StatusInvest snapshots and the yfinance splits of the old IBrX work.
+
+| Finding | Evidence | Decision |
+|---|---|---|
+| A security's `distribution_number` changes exactly on the first session it trades without a right. Every PETR3 cash event in B3's history (56 data-com dates, 2007–2026) is the last session before a change | PETR3: 56 of 56 | H3.2 |
+| Stock events land on the same changes, with the expected price ratio: WEGE3 split 2021 (open / previous close 0.515), MGLU3 split 2020 (0.255), MGLU3 reverse split 2024 (9.72), PETR3/PETR4 split 2008 (0.504), PETR reverse split 2000 (101) | 12 of 12 events since 2000 | H3.2, H3.5 |
+| An illiquid share can skip several distributions between two trades (`ODER4` from 140 to 146) | 1,143 changes of more than one number | H3.3 |
+| B3's listed-company service gives, per issuer, the full history of stock events (back to 1994), recent cash events and subscriptions; a second call gives the paginated cash history (PETROBRAS: 343 records, back to 2007) with the data-com, the value and the closing price on the data-com | WEGE, ITSA, MGLU, PETR | H3.4, H3.10 |
+| The stock-event `factor` is a percentage for splits and bonus issues (WEGE3 split `100` = ×2, MGLU3 split `300` = ×4, WEGE3 bonus `30` = ×1.3, ITSA bonus `2` = ×1.02) and a multiplier for reverse splits (MGLU3 `0.1` = 10 to 1) | Factors against price ratios | H3.5 |
+| B3 lists one cash event twice when it is paid in two installments (PETR 2025-04-16, 0.35477261 twice) | Cash history | H3.8 |
+| *Earnings credited* carries ISIN and distribution number (`BRPETRACNOR9 213`), no data-com; its value equals B3's rate (JCP gross). Its layout changed between downloads: English header, decimal point and MM/DD dates, then Portuguese header, decimal comma and DD/MM | 204 of 273 share rows fall inside a change; the rest belong to issuers that did not trade | H3.3, H3.4 |
+| StatusInvest gives only cash events, relabels history with today's ticker (`COGN3` from 2009, `MOTV3` from 2008), changes history between downloads (184 vs. 65 rows differ between two snapshots) and is nearly empty before 2007 | Two snapshots | H3.4 |
+| yfinance covers only the tickers it was asked for, mixes bonuses with splits and duplicates events (`AMER3`: four 100-to-1 reverse splits in five weeks of 2024, one in reality) | 272 rows, 85 tickers | H3.4 |
+| Changes with a large price jump (open / previous close below 0.7 or above 1.4) that neither StatusInvest nor yfinance explains: 77 in 2000, 13 to 30 a year recently | Exploration | H3.6 |
+| Holders of a delisted share received another existing share at a ratio: `LAME4` → `AMER3` (0.188964), `SOMA3` → `AZZA3`, `PCAR4` → `PCAR3`, `VIVT4` → `VIVT3`, `CESP6` → `AURE3`; the H2 pairs of the old IBrX notes that are true renames are all linked | Old IBrX notes against the security master | H3.7 |
+
+## Decision
+
+### What the ledger records
+
+- **H3.1 — An event is something that happened to holders of one ISIN on
+  one ex-date.** The `ex_date` is the first B3 session on which the security
+  traded, or could have traded, without the right; the `last_cum_date`
+  (data-com) is the session before it. Events are kept per ISIN and carry
+  the `security_id` of H2, so a renamed security has one event history.
+  Prices in the ledger are in BRL per share of that ISIN, as of the event.
+
+### The skeleton
+
+- **H3.2 — Every change of distribution number is an ex-session.** The
+  build lists, per round-lot ISIN of type AC, UN or CD, the sessions on
+  which `distribution_number` differs from the previous traded session
+  (`ex_sessions`), with the prices around the change. This list comes from
+  COTAHIST alone, covers delisted securities, and is the reference every
+  source is checked against: an event explains an ex-session, and an
+  ex-session that no event explains is reported (H3.6).
+- **H3.3 — Events are matched to ex-sessions by interval.** An event with a
+  data-com `d` on ISIN `i` matches the change of `i` whose previous traded
+  session is on or before `d` and whose session is after `d`. An event that
+  carries a distribution number `n` instead of a date (*Earnings credited*)
+  matches the change from `a` to `b` with `a ≤ n < b`. An event whose ISIN
+  traded on both sides of its data-com under one distribution number
+  contradicts COTAHIST and goes to review (`no_ex_session`); an event whose
+  ISIN did not trade around the data-com is kept, unmatched.
+
+### Sources
+
+- **H3.4 — Sources, in priority order.**
+  1. `manual` — reviewed entries in `corporate_actions.yaml` (H3.11).
+  2. `b3_listed` — B3's listed-company service: stock events, subscriptions
+     and recent cash events (`GetListedSupplementCompany`), and the cash
+     history (`GetListedCashDividends`), one JSON snapshot per issuer and
+     download (H3.10).
+  3. `b3_credited` — the daily *Earnings credited* files; cash events from
+     2026-06 on, and the check of values credited.
+  4. `bootstrap` — cash events of StatusInvest, converted once into the
+     canonical input (H3.10) and frozen, used **only for ISINs absent from
+     every `b3_listed` snapshot**, and **only when they match an
+     ex-session** (H3.3). An unmatched bootstrap event is dropped and
+     counted.
+  5. `inferred` — stock events read from an ex-session's price ratio (H3.6).
+
+  yfinance is not a source. Every source keeps its raw files in `raw/`, as
+  downloaded; the build never fetches anything.
+
+### Event types and amounts
+
+- **H3.5 — Types and the share ratio.** `event_type` is one of:
+  `CASH_DIVIDEND`, `INTEREST_ON_CAPITAL` (JCP, gross), `INCOME`
+  (*rendimento*, the monetary update B3 lists beside a dividend),
+  `RETURN_OF_CAPITAL`, `SPLIT`, `REVERSE_SPLIT`, `STOCK_BONUS`,
+  `SUBSCRIPTION`, `EXCHANGE` (H3.7), `CONVERSION` (H3.7), `REDEMPTION`
+  and `OTHER`. Cash events carry `cash_amount` (BRL per share). Stock events
+  carry `share_ratio`, the number of shares held after the event per share
+  held before: B3's `DESDOBRAMENTO` and `BONIFICACAO` factor `f` gives
+  `1 + f / 100`, and `GRUPAMENTO` gives `f` itself. Subscriptions carry the
+  percentage and the subscription price as published; whether they adjust
+  prices is decided in H4. Fraction auctions (*leilão de frações*) are not
+  events: they pay for rounding, not for a right. Each B3 label maps to one
+  type in a table in the code; an unknown label is an error, so a new label
+  is read once and mapped.
+
+### Explaining the skeleton
+
+- **H3.6 — Each ex-session gets a status.** Let `r` be the open over the
+  previous traded close.
+  - `explained` — at least one event matches it (H3.3);
+  - `inferred` — no event matches, `r` is outside [0.7, 1.4], and `r` is
+    within 5% of a common share ratio (2, 3, 4, 5, 8, 10, 20, 25, 50, 100,
+    1,000 or their inverses; H2.7). The build records a `SPLIT` or
+    `REVERSE_SPLIT` with `source = inferred`, status `inferred`, and uses
+    it. A missing split turns a security's return into a −50% day; a
+    distribution change at a common ratio is strong evidence, and the
+    review lists every inferred event, so a wrong one is rejected in the
+    overrides;
+  - `unexplained_jump` — no event matches, `r` is outside [0.7, 1.4], and
+    no common ratio fits: waits for review;
+  - `unexplained` — no event matches and `r` is within [0.7, 1.4]: a small
+    event the sources do not describe (a dividend of a delisted issuer, a
+    subscription). Not adjusted, counted per year in the summary;
+  - `accepted` — reviewed and marked in the overrides as needing no event.
+
+### Between securities
+
+- **H3.7 — Exchanges and conversions.** Two events relate two ISINs:
+  - `EXCHANGE` — the old ISIN's holders received the new ISIN at a ratio,
+    and H2 linked them into one security (a rename with a ratio, H2.1). It
+    sits on the new ISIN's first session and carries `share_ratio`.
+  - `CONVERSION` — the holders received a different security at a ratio
+    (`LAME4` → `AMER3`, `PCAR4` → `PCAR3`). It sits on the old security's
+    last session plus one and carries `share_ratio` and `target_isin`. A
+    conversion ends the old series; it does not adjust the target's prices.
+    Its use is to carry a position from one security to another in a
+    backtest.
+  Both come from the overrides. The build proposes them: every H2 candidate
+  that is `pending` or `superseded`, with its price ratio and
+  `implied_factor`, is listed for review as a possible exchange or
+  conversion.
+
+### Building the ledger
+
+- **H3.8 — Merging sources.** Within one source, rows are distinct events
+  (two installments of one dividend are two events). Across sources, events
+  of one ISIN, ex-date and type are matched one to one by amount, within
+  0.5% for cash and 1% for share ratios; the higher-priority source wins and
+  the others are kept as confirmations. Amounts that differ beyond the
+  tolerance are written to the conflicts table with both values, and the
+  higher-priority one is used. `b3_listed` snapshots are merged by keeping
+  every event ever seen; an event whose amount changed between snapshots
+  keeps the latest amount, and the change is reported.
+- **H3.9 — Tables.** In `curated/b3/`:
+  - `corporate_actions.parquet`: one row per event — `event_id` (hash of
+    ISIN, ex-date, type, amount and source row), `security_id`, `isin`,
+    `ex_date`, `last_cum_date`, `event_type`, `cash_amount`, `share_ratio`,
+    `subscription_price`, `target_isin`, `payment_date`, `approved_on`,
+    `source`, `status` (`confirmed`, `inferred`, `rejected`),
+    `confirmed_by` (other sources that agree);
+  - `ex_sessions.parquet`: the skeleton with its status (H3.6) and the
+    matching `event_id`s;
+  - `corporate_action_conflicts.parquet`;
+  - `corporate_actions.json`: counts per source, type, status and year,
+    dropped bootstrap events, unexplained ex-sessions per year, and the
+    SHA-256 of every input.
+
+### Raw inputs
+
+- **H3.10 — Layout.**
+  - `raw/b3/listed_companies/YYYY-MM-DD/supplement/<CODE>.json` and
+    `raw/b3/listed_companies/YYYY-MM-DD/cash_dividends/<CODE>/page-NNN.json`:
+    one folder per download, the responses as received. `<CODE>` is the
+    issuer code (the ticker root, `PETR`). A download covers every root seen
+    in COTAHIST since 2000, so the snapshot itself records which issuers B3
+    still describes; an empty answer is saved too.
+  - `raw/b3/earnings_credited/YYYY/YYYY-MM-DD.csv`, one file per day as
+    published.
+  - `raw/bootstrap/statusinvest_cash.parquet`: the frozen bootstrap, in a
+    canonical schema owned by this record — `ticker`, `last_cum_date`,
+    `event_type`, `cash_amount`, `payment_date`, `retrieved_on`. The code
+    that produced it from StatusInvest lives in the private research
+    repository and is not run again.
+  The downloads are made by the B3 data collector (outside this
+  repository); IbexQuant reads the files.
+
+### Overrides and commands
+
+- **H3.11 — `corporate_actions.yaml`**, beside `ticker_links.yaml` in the
+  overrides root (H2.9): `events` (add an event, with every field and a
+  note), `rejections` (mark a source event or an inferred one as wrong, by
+  ISIN, ex-date, type and source), `accepted` (ex-sessions that need no
+  event), `exchanges` and `conversions` (H3.7). Every entry has a note.
+- **H3.12 — Command line.**
+  - `ibexquant data build corporate-actions [--no-overrides]` builds the
+    tables and prints the summary;
+  - `ibexquant data review events [--status STATUS ...] [--yaml]` prints
+    ex-sessions and events awaiting review with the prices around them; with
+    `--yaml`, as entries of `corporate_actions.yaml`.
+
+## Alternatives considered
+
+- **Ex-dates from the sources' dates alone.** Rejected (H3.2): B3 dates are
+  data-com, StatusInvest relabels tickers, *Earnings credited* has no date
+  at all, and none of them covers every security. The distribution number
+  is in every COTAHIST row since 1995.
+- **StatusInvest and yfinance as full sources.** Rejected (H3.4): they
+  revise history, cover only what they were asked, and duplicate events.
+  StatusInvest stays only where B3 says nothing, and only for dates COTAHIST
+  confirms.
+- **Inferred splits only after review.** Rejected (H3.6): unlike a wrong
+  link in H2, which merges two companies, a missing split corrupts every
+  return across it, and the review list is the same either way.
+- **Price-based cash amounts for delisted issuers (`1 − open / previous
+  close`).** Rejected: the overnight move is of the same size as most
+  dividends, so the amount would be noise. These ex-sessions stay
+  `unexplained` and are counted.
+- **Adjusting the target of a conversion.** Rejected (H3.7, H2.5): the
+  target traded before the conversion, at its own prices.
+
+## Consequences
+
+- H4 reads one table: per security, the events with `ex_date`,
+  `cash_amount` and `share_ratio`.
+- The ledger is as complete as B3's service for listed issuers, as
+  complete as COTAHIST's distribution numbers for the dates of every
+  security, and incomplete in amounts for issuers delisted before the first
+  B3 download, where the frozen StatusInvest snapshot fills what it can.
+- Weekly B3 downloads keep the ledger current; a missed week loses nothing,
+  because the cash history is cumulative.
+- Units are ISIN type `CD`, not `UN` (`BRSANBCDAM13`); H2's adjacent-rename
+  rule (H2.4, rule 3) does not consider them. The build reports CD
+  ex-sessions that start a new ISIN, so a missed unit rename shows up here;
+  a change to H2 is a separate record.
