@@ -39,6 +39,7 @@ from ibexQuant.data.reference import (
     SecurityMasterNotBuiltError,
     SecurityNotFoundError,
     build_security_master,
+    implied_factor,
     is_isin,
     load_link_overrides,
     read_candidates,
@@ -92,6 +93,39 @@ def test_valid_isins(code: str) -> None:
 )
 def test_invalid_isins(code: str) -> None:
     assert not is_isin(code)
+
+
+# --- Implied split factor (hint for review) ---
+
+
+@pytest.mark.parametrize(
+    ("ratio", "factor"),
+    [(4.994, 5.0), (0.254, 0.25), (19.63, 20.0), (0.0503, 0.05), (2.0, 2.0), (0.001005, 0.001)],
+)
+def test_ratio_close_to_a_common_factor(ratio: float, factor: float) -> None:
+    assert implied_factor(ratio) == factor
+
+
+@pytest.mark.parametrize("ratio", [1.0, 1.02, 7.0, 0.6, 1500.0, 0.0, -2.0, float("nan")])
+def test_ratio_without_a_common_factor(ratio: float) -> None:
+    assert implied_factor(ratio) is None
+
+
+def test_candidates_carry_the_implied_factor(tmp_path: Path) -> None:
+    old, new = isin("OLDX"), isin("NEWX")
+    store = market(
+        tmp_path,
+        [
+            detail(session="20240102", ticker="OLDX3", isin=old, close=10.0),
+            detail(session="20240103", ticker="NEWX3", isin=new, open_=50.0),
+        ],
+        fca=False,
+    )
+    build_security_master(store, LinkOverrides.none())
+    row = read_candidates(store).iloc[0]
+    assert row["ratio"] == 5.0
+    assert row["implied_factor"] == 5.0
+    assert row["status"] == "pending"  # a hint, never a decision
 
 
 # --- Rule 1: same ISIN ---
@@ -177,13 +211,72 @@ def test_link_rule_and_cnpj_per_span(store: DataStore) -> None:
     assert table.loc["BHIA3", "cnpj"] == "33.041.260/0652-90"
 
 
-def test_different_cnpjs_wait_for_review(store: DataStore) -> None:
+def test_different_cnpjs_wait_for_review_as_likely(store: DataStore) -> None:
+    # TIMP3 -> TIMS3: one partner each, and the price continues (20.0 -> 20.0).
     summary = build_security_master(store, LinkOverrides.none())
     master = SecurityMaster.load(store)
 
     assert security_of(master, "TIMP3") != security_of(master, "TIMS3")
-    assert status_of(store, TIMP, TIMS) == "pending"
-    assert summary.candidates["pending"] == 1
+    assert status_of(store, TIMP, TIMS) == "likely"
+    assert (summary.candidates["likely"], summary.candidates["pending"]) == (1, 0)
+
+
+def test_price_jump_keeps_a_pair_pending(tmp_path: Path) -> None:
+    old, new = isin("OLDX"), isin("NEWX")
+    store = market(
+        tmp_path,
+        [
+            detail(session="20240102", ticker="OLDX3", isin=old, close=10.0),
+            detail(session="20240103", ticker="NEWX3", isin=new, open_=30.0),
+        ],
+        fca=False,
+    )
+    build_security_master(store, LinkOverrides.none())
+    assert status_of(store, old, new) == "pending"
+
+
+def test_listing_with_two_partners_is_not_likely(tmp_path: Path) -> None:
+    old, first, second = isin("OLDX"), isin("NEWA"), isin("NEWB")
+    store = market(
+        tmp_path,
+        [
+            detail(session="20240102", ticker="OLDX3", isin=old, close=10.0),
+            detail(session="20240103", ticker="NEWA3", isin=first, open_=10.0),
+            detail(session="20240104", ticker="NEWB3", isin=second, open_=10.0),
+        ],
+        fca=False,
+    )
+    build_security_master(store, LinkOverrides.none())
+    assert status_of(store, old, first) == "pending"
+    assert status_of(store, old, second) == "pending"
+
+
+@pytest.mark.parametrize("kind", ["CTF00", "BDR00"], ids=["fund-quota", "bdr"])
+def test_fund_quotas_and_bdrs_are_not_candidates(tmp_path: Path, kind: str) -> None:
+    store = market(
+        tmp_path,
+        [
+            detail(session="20240102", ticker="AAAA11", isin=isin("AAAA", kind)),
+            detail(session="20240103", ticker="BBBB11", isin=isin("BBBB", kind)),
+        ],
+        fca=False,
+    )
+    build_security_master(store, LinkOverrides.none())
+    assert read_candidates(store).empty
+
+
+def test_units_are_candidates(tmp_path: Path) -> None:
+    old, new = isin("AAAA", "UNT00"), isin("BBBB", "UNT00")
+    store = market(
+        tmp_path,
+        [
+            detail(session="20240102", ticker="AAAA11", isin=old),
+            detail(session="20240103", ticker="BBBB11", isin=new),
+        ],
+        fca=False,
+    )
+    build_security_master(store, LinkOverrides.none())
+    assert status_of(store, old, new) == "likely"
 
 
 def test_pairs_with_an_already_linked_side_are_superseded(store: DataStore) -> None:

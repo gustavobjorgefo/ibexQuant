@@ -34,6 +34,8 @@ registration forms (FCA) from 2010 to 2026.
 | The FCA fills `Codigo_Negociacao` only from reference year 2018; 2010–2017 have the field empty in every row | 0 of 4,676 rows before 2018 | H2.6 |
 | FCA dates (`Data_Inicio_Negociacao`) describe the share class, not the ticker: `BHIA3` is shown as traded since 2018-11-26, the date of `VVAR3`'s segment migration | FCA vs. COTAHIST | H2.6 |
 | The CVM portal refuses connections from outside Brazil | Cloudflare block page from Japan; works through a Brazilian address | H2.8 |
+| A first build that let fund quotas and BDRs be rename candidates left 1,950 pairs pending: 799 fund quotas and 544 BDRs (listings that happened to end and start in the same week), 599 shares | First build on the real base | H2.4, rule 3 |
+| Among the share pairs, those with one partner on each side and a continuous price (new first open / old last close between 0.8 and 1.25) are 44, and read as known renames: ITAU4 → ITUB4, PRGA3 → BRFS3, CPNE5 → BRKM5, KROT3 → COGN3 (missing from the 2018 FCA). The others show ratios such as 0.003 or 850 | Same build | H2.7, H2.15 |
 
 ## Decision
 
@@ -67,8 +69,10 @@ registration forms (FCA) from 2010 to 2026.
      successors (rights, receipts) are reported and left unlinked.
   3. **Adjacent renames** — span A ends, span B starts within 5 sessions
      after it, B never traded before A's last session, their ISINs have the
-     same type and kind (characters 7–11), and the type is a share, unit,
-     fund quota or BDR (`AC`, `UN`, `CT`, `BD`). Such a pair is a
+     same type and kind (characters 7–11), and the type is a share or a unit
+     (`AC`, `UN`). Fund quotas and BDRs keep their ISIN when their ticker
+     changes, so rule 1 covers them; as candidates they only produced
+     coincidences. Such a pair is a
      *candidate*. It becomes a link (`cnpj`) when both listings map to the
      same CNPJ (H2.6); otherwise it waits for a decision in the overrides.
      Confirmed candidates are linked closest first (smallest gap), so a
@@ -92,7 +96,19 @@ registration forms (FCA) from 2010 to 2026.
   ticker dates come from COTAHIST.
 - **H2.7 — Unreviewed candidates stay unlinked.** A wrong link merges two
   companies' prices; a missing link only restarts a series. Until reviewed,
-  a candidate is reported, and the two spans remain two securities.
+  a candidate is reported, and the two spans remain two securities. A
+  candidate that reads as a rename — among the undecided pairs, neither
+  listing has another partner, and the price continues (new first open /
+  old last close between 0.8 and 1.25) — is marked `likely` and listed
+  first for review; it is still not linked without a decision. A rename
+  made together with a split or an exchange ratio jumps by that factor
+  and stays `pending`; when the ratio is within 5% of a common factor (2,
+  3, 4, 5, 8, 10, 20, 25, 50, 100, 1,000 or their inverses), the candidate
+  carries it as `implied_factor`, a hint for review and never a decision —
+  16 of the 135 one-to-one share pairs of the first build had one, some
+  real (TIET3 → AESB3, 5; BELG3 → ARCE3, 20), some coincidences. H3
+  re-evaluates these candidates against the corporate actions it records:
+  a ratio explained by an event at the change reads as a continuing price.
 
 ### Sources and overrides
 
@@ -143,10 +159,11 @@ registration forms (FCA) from 2010 to 2026.
     `isin`, `market_type`, `first_session`, `last_session`, `sessions`,
     `link_rule` (`founding`, `same_isin`, `internal_code`, `cnpj`,
     `override`), `cnpj` (nullable);
-  - `link_candidates.parquet`: every rule-3 candidate with its status and
-    the prices around the change (old last close, new first open, their
-    ratio). Statuses: `linked_by_cnpj`, `linked_by_override`, `rejected`,
-    `pending` (waits for review), `conflict` (two confirmed partners at the
+  - `link_candidates.parquet`: every rule-3 candidate with its status, the
+    prices around the change (old last close, new first open, their ratio)
+    and the `implied_factor` (H2.7). Statuses: `linked_by_cnpj`, `linked_by_override`, `rejected`,
+    `likely` (reads as a rename, waits for review), `pending` (waits for
+    review, low plausibility), `conflict` (two confirmed partners at the
     same distance), `superseded` (one side is already linked to another
     listing — no review needed);
   - `security_master.json`: counts, pending candidates, identifier changes,
@@ -172,8 +189,10 @@ registration forms (FCA) from 2010 to 2026.
 - **H2.15 — Command line.**
   - `ibexquant data build security-master [--no-overrides]` builds the
     tables and prints the summary;
-  - `ibexquant data review links [--pending]` prints the candidates with the
-    prices around each change, ready to be decided in `ticker_links.yaml`.
+  - `ibexquant data review links [--status STATUS ...] [--yaml]` prints the
+    candidates with the prices around each change; with `--yaml`, it prints
+    them as `links:` entries of `ticker_links.yaml`, to be checked, trimmed
+    and pasted (`--status likely --yaml` is the usual review).
 
 ### Dependencies
 
