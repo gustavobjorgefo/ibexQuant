@@ -29,6 +29,12 @@ events:
     type: CASH_DIVIDEND
     cash_amount: 0.12
     note: "from the company's notice"
+  - isin: BRCVCBACNOR1
+    last_cum_date: 2020-07-14
+    type: SUBSCRIPTION
+    share_ratio: 0.1574298678
+    subscription_price: 12.84
+    note: "preemptive right"
 rejections:
   - isin: BRPETRACNOR9
     ex_date: 2024-04-30
@@ -54,7 +60,10 @@ def test_a_valid_file_gives_events_rejections_and_accepted(tmp_path: Path) -> No
     assert events[["isin", "event_type", "target_isin", "source"]].values.tolist() == [
         ["BRLAMEACNPR6", "CONVERSION", "BRAMERACNOR6", "manual"],
         ["BRODERACNPR3", "CASH_DIVIDEND", "", "manual"],
+        ["BRCVCBACNOR1", "SUBSCRIPTION", "", "manual"],
     ]
+    assert events.iloc[2]["subscription_price"] == 12.84
+    assert pd.isna(events.iloc[0]["subscription_price"])
     assert events.iloc[0]["share_ratio"] == 0.188964
     assert events.iloc[0]["last_cum_date"] == pd.Timestamp("2022-01-21")
     assert events.iloc[0]["origin"] == "overrides"
@@ -105,6 +114,11 @@ def test_none_is_empty() -> None:
             "version: 1\nevents:\n  - {isin: BRPETRACNOR9, last_cum_date: 2024-01-02, "
             "type: SPIN_OFF, share_ratio: 0.1, note: x}\n",
             "target_isin",
+        ),
+        (
+            "version: 1\nevents:\n  - {isin: BRPETRACNOR9, last_cum_date: 2024-01-02, "
+            "type: SUBSCRIPTION, share_ratio: 0.1, note: x}\n",
+            "subscription_price",
         ),
         (
             "version: 1\nevents:\n  - {isin: BRPETRACNOR9, last_cum_date: someday, "

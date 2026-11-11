@@ -14,7 +14,8 @@ Contract
 - The file is optional: without it there are no decisions.
 - Dates are ISO (``2024-04-30``); types are :class:`EventType` names; cash
   types need ``cash_amount``, the others ``share_ratio``; spin-offs,
-  exchanges and conversions also need ``target_isin``.
+  exchanges and conversions also need ``target_isin``, and subscriptions
+  ``subscription_price``.
 - Whether an entry matches something in the data is checked by the build.
 
 What does not belong here
@@ -164,6 +165,8 @@ def _event(entry: object, where: str) -> dict[str, object]:
         row["share_ratio"] = _number(fields, "share_ratio", where)
     if kind in _TARGET_TYPES:
         row["target_isin"] = _isin(fields, "target_isin", where)
+    if kind is EventType.SUBSCRIPTION:
+        row["subscription_price"] = _number(fields, "subscription_price", where)
     return row
 
 
