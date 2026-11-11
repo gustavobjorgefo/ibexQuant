@@ -30,7 +30,7 @@ PETR_SESSIONS: list[tuple[str, int, float, float]] = [
 ]
 VALE_SESSIONS: list[tuple[str, int, float, float]] = [
     ("2024-04-22", 200, 60.0, 60.0),
-    ("2024-04-23", 201, 58.0, 58.0),  # bootstrap dividend, data-com 04-22
+    ("2024-04-23", 201, 58.0, 58.0),  # no source, small move -> unexplained
     ("2024-04-24", 201, 58.0, 58.0),
 ]
 
@@ -72,9 +72,9 @@ def write_json(path: Path, content: object) -> None:
     path.write_text(json.dumps(content), encoding="utf-8")
 
 
-def history(value: str, last_cum: str) -> dict[str, str]:
+def history(value: str, last_cum: str, kind: str = "ON") -> dict[str, str]:
     return {
-        "typeStock": "ON",
+        "typeStock": kind,
         "dateApproval": "01/04/2024",
         "valueCash": value,
         "ratio": "1",
@@ -122,6 +122,7 @@ def ledger_store(tmp_path: Path) -> DataStore:
             "results": [
                 history("0,50", "23/04/2024"),
                 history("0,10", "22/04/2024"),  # PETR3 traded 04-23 under the same number
+                history("0,20", "22/04/2024", "PN"),  # no PETR PN in bars -> unresolved
             ],
         },
     )
@@ -134,22 +135,4 @@ def ledger_store(tmp_path: Path) -> DataStore:
         f"PETROBRAS;{PETR} 100;DIVIDENDO;-;0,70;10/05/2024\n",
         encoding="utf-8",
     )
-
-    bootstrap = store.raw("bootstrap", "statusinvest_cash.parquet")
-    bootstrap.parent.mkdir(parents=True)
-    pd.DataFrame(
-        {
-            "ticker": ["PETR3", "VALE3", "VALE3", "XPTO3"],
-            "last_cum_date": [
-                DAY("2024-04-23"),
-                DAY("2024-04-22"),
-                DAY("2024-04-23"),
-                DAY("2024-04-22"),
-            ],
-            "event_type": ["CASH_DIVIDEND"] * 4,
-            "cash_amount": [0.5, 2.0, 1.0, 1.0],
-            "payment_date": [pd.NaT] * 4,
-            "retrieved_on": [DAY("2025-12-18")] * 4,
-        }
-    ).to_parquet(bootstrap, index=False)
     return store

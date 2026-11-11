@@ -16,9 +16,7 @@ from ibexQuant.data.ingestion.b3.listed_companies import (
 )
 from ibexQuant.data.reference.corporate_action_sources import (
     SOURCE_EVENT_COLUMNS,
-    BootstrapFormatError,
     IsinLocator,
-    bootstrap_events,
     credited_events,
     fre_events,
     listed_events,
@@ -106,11 +104,6 @@ def test_locator_finds_the_isin_of_a_renamed_security_on_a_date(locator: IsinLoc
 def test_locator_reports_several_isins(locator: IsinLocator) -> None:
     securities = locator.securities_with_prefix("BRPETRACN")
     assert locator.isin_at(securities, DAY("2020-01-02")) == (None, "several ISINs")
-
-
-def test_locator_knows_round_lot_tickers_only(locator: IsinLocator) -> None:
-    assert locator.securities_with_ticker("BHIA3") == {VVAR}
-    assert locator.securities_with_ticker("PETR4F") == set()
 
 
 # --- B3 listed companies ---
@@ -252,45 +245,6 @@ def test_credited_events_keep_the_distribution_number() -> None:
 
 def test_no_credited_rows_give_no_events() -> None:
     assert credited_events(pd.DataFrame()).empty
-
-
-# --- Bootstrap ---
-
-
-def bootstrap(**overrides: object) -> pd.DataFrame:
-    row = {
-        "ticker": "BHIA3",
-        "last_cum_date": DAY("2019-05-02"),
-        "event_type": "INTEREST_ON_CAPITAL",
-        "cash_amount": 0.05,
-        "payment_date": DAY("2019-06-01"),
-        "retrieved_on": DAY("2025-12-18"),
-    }
-    return pd.DataFrame([row | overrides])
-
-
-def test_bootstrap_tickers_are_placed_through_their_security(locator: IsinLocator) -> None:
-    events, unresolved = bootstrap_events(bootstrap(), locator)
-    assert events[["isin", "source", "origin"]].values.tolist() == [
-        [VVAR, "bootstrap", "bootstrap:BHIA3"]
-    ]
-    assert unresolved.empty
-
-
-def test_unknown_bootstrap_tickers_are_unresolved(locator: IsinLocator) -> None:
-    events, unresolved = bootstrap_events(bootstrap(ticker="XPTO3"), locator)
-    assert events.empty
-    assert unresolved["key"].tolist() == ["XPTO3"]
-
-
-def test_bootstrap_without_a_column_is_an_error(locator: IsinLocator) -> None:
-    with pytest.raises(BootstrapFormatError, match="retrieved_on"):
-        bootstrap_events(bootstrap().drop(columns="retrieved_on"), locator)
-
-
-def test_bootstrap_events_must_be_cash(locator: IsinLocator) -> None:
-    with pytest.raises(BootstrapFormatError, match="SPLIT"):
-        bootstrap_events(bootstrap(event_type="SPLIT"), locator)
 
 
 # --- CVM reference forms ---

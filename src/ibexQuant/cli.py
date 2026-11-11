@@ -24,7 +24,7 @@ Commands
     ``--yaml``, ready-to-paste ``ticker_links.yaml`` entries for them.
 ``ibexquant data build corporate-actions [--no-overrides]``
     Build the corporate actions ledger from ``bars_daily``, the security
-    master, B3's raw files, the frozen bootstrap and the override file
+    master, B3's raw files, the CVM reference forms and the override file
     (ADR 0013).
 ``ibexquant data review events [--status STATUS ...] [--yaml]``
     Print the ex-sessions waiting for review (by default inferred splits and
@@ -258,7 +258,6 @@ def _data_build_corporate_actions(args: argparse.Namespace) -> int:
         ActionOverrides,
         load_action_overrides,
     )
-    from ibexQuant.data.reference.corporate_action_sources import BootstrapFormatError
     from ibexQuant.data.reference.corporate_actions import (
         LedgerBuildError,
         build_corporate_actions,
@@ -282,7 +281,6 @@ def _data_build_corporate_actions(args: argparse.Namespace) -> int:
         StockFactorError,
         ListedCompaniesFormatError,
         EarningsCreditedFormatError,
-        BootstrapFormatError,
         FreFormatError,
     ) as error:
         print(f"error: {error}", file=sys.stderr)
@@ -296,7 +294,6 @@ def _data_build_corporate_actions(args: argparse.Namespace) -> int:
     line("ex-sessions", summary.ex_sessions)
     print(f"conflicts: {summary.conflicts}")
     line("unresolved", summary.unresolved)
-    line("bootstrap dropped", summary.bootstrap_dropped)
     snapshots = summary.inputs["snapshots"]
     names = ", ".join(str(name) for name in snapshots) if isinstance(snapshots, list) else ""
     print(f"snapshots: {names or 'none'}; FRE files: {summary.inputs['fre_files']}")

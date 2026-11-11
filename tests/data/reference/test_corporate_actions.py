@@ -55,7 +55,6 @@ def test_events_carry_ex_dates_sources_and_statuses(built: DataStore) -> None:
     ].values.tolist()
     assert rows == [
         [PETR, DAY("2024-04-23"), "CASH_DIVIDEND", "b3_listed", "review", ""],
-        [VALE, DAY("2024-04-23"), "CASH_DIVIDEND", "bootstrap", "confirmed", ""],
         [PETR, DAY("2024-04-24"), "CASH_DIVIDEND", "b3_listed", "confirmed", "b3_credited"],
         [PETR, DAY("2024-04-26"), "SPLIT", "b3_listed", "confirmed", ""],
         [PETR, DAY("2024-04-30"), "SPLIT", "inferred", "inferred", ""],
@@ -63,7 +62,7 @@ def test_events_carry_ex_dates_sources_and_statuses(built: DataStore) -> None:
     split = events[events["source"] == "inferred"].iloc[0]
     assert split["share_ratio"] == 10.0
     assert split["last_cum_date"] == DAY("2024-04-29")
-    assert set(events["security_id"]) == {PETR, VALE}
+    assert set(events["security_id"]) == {PETR}
     assert events["event_id"].is_unique
 
 
@@ -77,7 +76,7 @@ def test_ex_sessions_get_a_status(built: DataStore) -> None:
         (PETR, "04-30"): "inferred",
         (PETR, "05-02"): "unexplained",
         (PETR, "05-03"): "unexplained_jump",
-        (VALE, "04-23"): "explained",
+        (VALE, "04-23"): "unexplained",
     }
     assert ex.loc[ex["session_date"] == DAY("2024-04-24"), "event_ids"].iloc[0] != ""
 
@@ -89,16 +88,14 @@ def test_lower_sources_that_disagree_are_conflicts(built: DataStore) -> None:
     ]
 
 
-def test_unresolved_rows_and_dropped_bootstrap_are_reported(built: DataStore) -> None:
+def test_unresolved_rows_and_the_summary_are_reported(built: DataStore) -> None:
     unresolved = table(built, UNRESOLVED_FILE)
-    assert unresolved["key"].tolist() == ["XPTO3"]
+    assert unresolved["key"].tolist() == ["PETR PN"]
     summary = json.loads(built.curated("b3", SUMMARY_FILE).read_text(encoding="utf-8"))
-    assert summary["bootstrap_dropped"] == {"security_has_b3_cash": 1, "no_ex_session": 1}
     assert summary["ex_sessions"]["inferred"] == 1
     assert summary["unexplained_by_year"]["unexplained_jump"] == {"2024": 1}
     assert summary["conflicts"] == 1
     assert summary["inputs"]["snapshots"] == ["2026-11-10"]
-    assert summary["inputs"]["bootstrap"] is not None
 
 
 def test_rebuilding_gives_the_same_tables(built: DataStore) -> None:
@@ -111,14 +108,12 @@ def test_a_build_without_sources_lists_the_skeleton(store: DataStore) -> None:
     for path in (
         store.raw("b3", "listed_companies"),
         store.raw("b3", "earnings_credited"),
-        store.raw("bootstrap"),
     ):
         for child in sorted(path.rglob("*"), reverse=True):
             child.unlink() if child.is_file() else child.rmdir()
     summary = build_corporate_actions(store, ActionOverrides.none())
     assert summary.events["source"] == {"inferred": 2}
     assert summary.ex_sessions == {"inferred": 2, "unexplained": 3, "unexplained_jump": 1}
-    assert summary.inputs["bootstrap"] is None
     assert table(store, CONFLICTS_FILE).empty
 
 

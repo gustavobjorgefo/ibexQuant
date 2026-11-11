@@ -13,16 +13,14 @@ splits where the price says so) and write the ledger tables to
 Contract
 --------
 - Inputs: ``bars_daily`` and the security master (curated), the B3
-  listed-company snapshots, the *Earnings credited* files and the frozen
-  bootstrap (raw), and the overrides. The build never downloads.
+  listed-company snapshots, the *Earnings credited* files and the CVM
+  reference forms (raw), and the overrides. The build never downloads.
 - Date events get ``ex_date`` = the first B3 session after their data-com;
   events placed by distribution number get the ex-session as ``ex_date`` and
   the session before it as data-com (H3.1, H3.3).
 - Events are merged per ISIN, ex-session (or ex-date when unplaced) and type;
   the highest-priority source supplies the events, lower sources confirm them
   one to one by amount or are written as conflicts (H3.8).
-- Bootstrap events are kept only for securities without any B3 cash event
-  and only when they match an ex-session (H3.4).
 - Outputs are replaced atomically; a build is a pure function of its inputs.
 
 What does not belong here
@@ -64,7 +62,6 @@ from ibexQuant.data.reference.corporate_action_sources import (
     UNRESOLVED_COLUMNS,
     IsinLocator,
     Source,
-    bootstrap_events,
     credited_events,
     fre_events,
     listed_events,
@@ -91,7 +88,6 @@ EX_SESSIONS_FILE: Final[str] = "ex_sessions.parquet"
 CONFLICTS_FILE: Final[str] = "corporate_action_conflicts.parquet"
 UNRESOLVED_FILE: Final[str] = "corporate_action_unresolved.parquet"
 SUMMARY_FILE: Final[str] = "corporate_actions.json"
-BOOTSTRAP_PARTS: Final[tuple[str, ...]] = ("bootstrap", "statusinvest_cash.parquet")
 SUMMARY_SCHEMA_VERSION: Final[int] = 1
 
 FRE_WINDOW_DAYS: Final[int] = 180
@@ -219,9 +215,6 @@ class LedgerSummary:
         Lower-priority events whose amounts disagree with the kept ones.
     unresolved : dict[str, int]
         Source rows that could not be placed on an ISIN, by reason.
-    bootstrap_dropped : dict[str, int]
-        Bootstrap events left out: securities with B3 cash events, and
-        events that match no ex-session.
     inputs : dict[str, object]
         Snapshots, credited files and file hashes used.
     built_at : str
@@ -233,7 +226,6 @@ class LedgerSummary:
     unexplained_by_year: dict[str, dict[str, int]]
     conflicts: int
     unresolved: dict[str, int]
-    bootstrap_dropped: dict[str, int]
     inputs: dict[str, object] = field(default_factory=dict)
     built_at: str = ""
 
@@ -274,22 +266,18 @@ def build_corporate_actions(store: DataStore, overrides: ActionOverrides) -> Led
     listed, unresolved_listed = listed_events(read_listed_companies(snapshots), locator)
     credited_paths = credited_files(store)
     credited = credited_events(read_earnings_credited(credited_paths))
-    bootstrap, unresolved_bootstrap, bootstrap_path = _bootstrap(store, locator)
     fre_paths = fre_files(store)
     fre, unresolved_fre = fre_events(read_fre_stock_events(fre_paths), locator)
     ex = ex_sessions_from_runs(runs)
     fre, unplaced_fre = _place_fre(fre, ex, calendar)
 
-    sources = [
-        frame for frame in (overrides.events, listed, fre, credited, bootstrap) if not frame.empty
-    ]
+    sources = [frame for frame in (overrides.events, listed, fre, credited) if not frame.empty]
     events = (
         pd.concat(sources, ignore_index=True)
         if sources
         else pd.DataFrame(columns=list(SOURCE_EVENT_COLUMNS))
     )
     events = _place(events, runs, calendar)
-    events, dropped = _filter_bootstrap(events)
     events, conflicts = _merge_sources(events)
     pending = list(overrides.rejections)
     events["rejected"] = _rejected(events, pending)
@@ -310,11 +298,7 @@ def build_corporate_actions(store: DataStore, overrides: ActionOverrides) -> Led
     events = _finish_events(events, security_of)
     ex = _finish_ex_sessions(ex, events, security_of)
     unresolved = pd.concat(
-        [
-            frame
-            for frame in (unresolved_listed, unresolved_fre, unplaced_fre, unresolved_bootstrap)
-            if not frame.empty
-        ]
+        [frame for frame in (unresolved_listed, unresolved_fre, unplaced_fre) if not frame.empty]
         or [pd.DataFrame(columns=list(UNRESOLVED_COLUMNS))],
         ignore_index=True,
     )
@@ -330,12 +314,10 @@ def build_corporate_actions(store: DataStore, overrides: ActionOverrides) -> Led
         unexplained_by_year=_unexplained_by_year(ex),
         conflicts=len(conflicts),
         unresolved=_counts(unresolved["reason"]),
-        bootstrap_dropped=dropped,
         inputs={
             "snapshots": [folder.name for folder in snapshots],
             "credited_files": len(credited_paths),
             "fre_files": len(fre_paths),
-            "bootstrap": _sha256(bootstrap_path),
             "overrides": overrides.sha256,
         },
         built_at=datetime.now(UTC).isoformat(timespec="seconds"),
@@ -358,15 +340,6 @@ def _load_bars(store: DataStore) -> pd.DataFrame:
     bars["isin"] = bars["isin"].astype(str)
     bars["ticker"] = bars["ticker"].astype(str)
     return bars.reset_index(drop=True)
-
-
-def _bootstrap(store: DataStore, locator: IsinLocator) -> tuple[pd.DataFrame, pd.DataFrame, Path]:
-    path = store.raw(*BOOTSTRAP_PARTS)
-    if not path.is_file():
-        empty = pd.DataFrame(columns=list(SOURCE_EVENT_COLUMNS))
-        return empty, pd.DataFrame(columns=list(UNRESOLVED_COLUMNS)), path
-    events, unresolved = bootstrap_events(pd.read_parquet(path), locator)
-    return events, unresolved, path
 
 
 # --- Placing ---
@@ -436,18 +409,6 @@ def _sessions_at(calendar: pd.DatetimeIndex, positions: np.ndarray) -> np.ndarra
     out = np.full(len(positions), np.datetime64("NaT", "ns"), dtype="datetime64[ns]")
     out[valid] = calendar.to_numpy()[positions[valid]]
     return out
-
-
-def _filter_bootstrap(events: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
-    is_bootstrap = events["source"] == Source.BOOTSTRAP.value
-    b3_cash = events["source"].isin([Source.B3_LISTED.value, Source.B3_CREDITED.value]) & events[
-        "event_type"
-    ].isin([kind.value for kind in CASH_TYPES])
-    covered = set(events.loc[b3_cash, "isin"])
-    with_b3 = is_bootstrap & events["isin"].isin(covered)
-    unmatched = is_bootstrap & ~with_b3 & (events["placement"] != MatchOutcome.MATCHED.value)
-    dropped = {"security_has_b3_cash": int(with_b3.sum()), "no_ex_session": int(unmatched.sum())}
-    return events[~(with_b3 | unmatched)].reset_index(drop=True), dropped
 
 
 # --- Merging sources ---
@@ -721,9 +682,3 @@ def _write_summary(store: DataStore, summary: LedgerSummary) -> None:
         store.curated(*CURATED_PARTS, SUMMARY_FILE),
         lambda temporary: temporary.write_text(text, encoding="utf-8"),
     )
-
-
-def _sha256(path: Path) -> str | None:
-    if not path.is_file():
-        return None
-    return hashlib.sha256(path.read_bytes()).hexdigest()

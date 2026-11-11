@@ -16,9 +16,8 @@ Contract
 - B3's cash history names an issuer code and a share class, not an ISIN. The
   class gives ISIN characters 7–11; the ISINs of ``bars_daily`` that start
   with ``BR``, the code and those characters point to securities; the ISIN of
-  those securities in force on the data-com is the event's ISIN (H3.13). The
-  bootstrap's tickers are placed the same way, from the ticker's securities.
-  A row that resolves to no ISIN or to several is returned apart, with the
+  those securities in force on the data-com is the event's ISIN (H3.13). A
+  row that resolves to no ISIN or to several is returned apart, with the
   reason.
 - B3's recent cash events repeat part of the cash history; both are
   ``b3_listed``, and a row present in both is kept as many times as the
@@ -86,7 +85,6 @@ class Source(StrEnum):
     B3_LISTED = "b3_listed"
     CVM_FRE = "cvm_fre"
     B3_CREDITED = "b3_credited"
-    BOOTSTRAP = "bootstrap"
     INFERRED = "inferred"
 
 
@@ -121,11 +119,6 @@ class IsinLocator:
         self._by_isin: dict[str, str] = dict(
             zip(round_lot["isin"].astype(str), round_lot["security_id"].astype(str), strict=True)
         )
-        self._by_ticker: dict[str, set[str]] = {}
-        for ticker, security in zip(
-            round_lot["ticker"].astype(str), round_lot["security_id"].astype(str), strict=True
-        ):
-            self._by_ticker.setdefault(ticker, set()).add(security)
         self._isins: np.ndarray = np.array(sorted(self._by_isin))
         with_cnpj = round_lot[round_lot["cnpj"].fillna("").astype(str) != ""]
         self._by_cnpj: dict[str, set[str]] = {}
@@ -143,10 +136,6 @@ class IsinLocator:
                 break
             found.add(self._by_isin[isin])
         return found
-
-    def securities_with_ticker(self, ticker: str) -> set[str]:
-        """Return the securities that ever traded round lots under ``ticker``."""
-        return set(self._by_ticker.get(ticker, set()))
 
     def isins_of_cnpj(self, cnpj: str) -> set[str]:
         """Return the round-lot ISINs the security master ties to a CNPJ."""
@@ -424,77 +413,6 @@ def _fre_targets(isins: set[str], ratios: dict[str, float]) -> list[tuple[str, f
         ):
             targets.append((isin, ratios["ON"]))
     return targets
-
-
-# --- Bootstrap ---
-
-BOOTSTRAP_COLUMNS: Final[tuple[str, ...]] = (
-    "ticker",
-    "last_cum_date",
-    "event_type",
-    "cash_amount",
-    "payment_date",
-    "retrieved_on",
-)
-"""Canonical schema of ``raw/bootstrap/statusinvest_cash.parquet`` (H3.10)."""
-
-
-class BootstrapFormatError(ValueError):
-    """The bootstrap file does not follow :data:`BOOTSTRAP_COLUMNS`."""
-
-
-def bootstrap_events(
-    bootstrap: pd.DataFrame, locator: IsinLocator
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Return the bootstrap's cash events, placed on ISINs through their tickers.
-
-    Raises
-    ------
-    BootstrapFormatError
-        If a column is missing or an event type is not a cash type.
-    """
-    missing = set(BOOTSTRAP_COLUMNS) - set(bootstrap.columns)
-    if missing:
-        raise BootstrapFormatError(f"Bootstrap lacks columns {sorted(missing)}.")
-    cash = {
-        EventType.CASH_DIVIDEND,
-        EventType.INTEREST_ON_CAPITAL,
-        EventType.INCOME,
-        EventType.RETURN_OF_CAPITAL,
-    }
-    unknown = set(bootstrap["event_type"]) - {kind.value for kind in cash}
-    if unknown:
-        raise BootstrapFormatError(f"Bootstrap event types {sorted(unknown)} are not cash.")
-    isins: list[str | None] = []
-    unresolved = []
-    days = pd.DatetimeIndex(pd.to_datetime(bootstrap["last_cum_date"]))
-    for ticker, day in zip(bootstrap["ticker"].astype(str), days, strict=True):
-        isin, reason = locator.isin_at(locator.securities_with_ticker(ticker), day)
-        isins.append(isin)
-        if isin is None:
-            unresolved.append(
-                {
-                    "source": Source.BOOTSTRAP.value,
-                    "origin": "bootstrap",
-                    "key": ticker,
-                    "last_cum_date": day,
-                    "reason": reason,
-                }
-            )
-    events = pd.DataFrame(
-        {
-            "isin": isins,
-            "last_cum_date": days,
-            "event_type": bootstrap["event_type"].to_numpy(),
-            "cash_amount": bootstrap["cash_amount"].to_numpy(),
-            "payment_date": bootstrap["payment_date"].to_numpy(),
-            "origin": ("bootstrap:" + bootstrap["ticker"].astype(str)).to_numpy(),
-            "label": bootstrap["event_type"].to_numpy(),
-        }
-    )
-    events = _keep_skeleton_isins(_frame(events[events["isin"].notna()], Source.BOOTSTRAP))
-    return events, pd.DataFrame(unresolved, columns=list(UNRESOLVED_COLUMNS))
 
 
 # --- Helpers ---

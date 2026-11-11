@@ -44,8 +44,8 @@ def test_build_without_overrides_prints_the_summary(
 ) -> None:
     assert main(["data", "build", "corporate-actions", "--no-overrides"]) == EXIT_OK
     out = capsys.readouterr().out
-    assert "events by source: b3_listed 3, bootstrap 1, inferred 1" in out
-    assert "ex-sessions: explained 3, inferred 1, unexplained 1, unexplained_jump 1" in out
+    assert "events by source: b3_listed 3, inferred 1" in out
+    assert "ex-sessions: explained 2, inferred 1, unexplained 2, unexplained_jump 1" in out
     assert "conflicts: 1" in out
     assert "snapshots: 2026-11-10; FRE files: 0" in out
     assert "built without corporate_actions.yaml" in out

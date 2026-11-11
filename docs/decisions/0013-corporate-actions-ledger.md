@@ -14,7 +14,9 @@ security, every ex-date with what happened on it. H3 records that ledger.
 
 Two goals shape the sources. The ledger must rest on official data, and the
 third-party data used by the old pipeline (StatusInvest, yfinance) must be
-avoided wherever official data exists, and frozen where it does not.
+avoided wherever official data exists. It turned out to exist everywhere the
+ledger needs it (B3 back to 1995, the CVM forms for stock events), so the
+ledger uses no third-party data at all.
 
 ### What the data shows
 
@@ -86,14 +88,14 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
   3. `cvm_fre` — stock events of the CVM reference forms (H3.14).
   4. `b3_credited` — the daily *Earnings credited* files; cash events from
      2026-06 on, and the check of values credited.
-  5. `bootstrap` — cash events of StatusInvest, converted once into the
-     canonical input (H3.10) and frozen, used **only for securities without
-     any `b3_listed` cash history**, and **only when they match an
-     ex-session** (H3.3). An unmatched bootstrap event is dropped and
-     counted.
-  6. `inferred` — stock events read from an ex-session's price ratio (H3.6).
+  5. `inferred` — stock events read from an ex-session's price ratio (H3.6).
 
-  yfinance is not a source. Every source keeps its raw files in `raw/`, as
+  StatusInvest and yfinance are not sources. A frozen StatusInvest
+  bootstrap was planned as a fifth source for issuers B3 does not describe;
+  the first full B3 download covered delisted issuers back to 1995, and the
+  gaps it left (roots that answer empty) are closed by fetching the old
+  trading name or by `corporate_actions.yaml`, so the bootstrap was dropped
+  before release. Every source keeps its raw files in `raw/`, as
   downloaded; the build never fetches anything.
 
 ### Event types and amounts
@@ -189,8 +191,8 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
   - `corporate_action_unresolved.parquet`: source rows that could not be
     placed on an ISIN (H3.13), with the reason;
   - `corporate_actions.json`: counts per source, type, status and year,
-    dropped bootstrap events, unexplained ex-sessions per year, and the
-    SHA-256 of every input.
+    unexplained ex-sessions per year, the inputs used and the SHA-256 of
+    the override file.
 
 ### Raw inputs
 
@@ -203,11 +205,6 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
     still describes; an empty answer is saved too.
   - `raw/b3/earnings_credited/YYYY/YYYY-MM-DD.csv`, one file per day as
     published.
-  - `raw/bootstrap/statusinvest_cash.parquet`: the frozen bootstrap, in a
-    canonical schema owned by this record — `ticker`, `last_cum_date`,
-    `event_type`, `cash_amount`, `payment_date`, `retrieved_on`. The code
-    that produced it from StatusInvest lives in the private research
-    repository and is not run again.
   The downloads are made by the B3 data collector (outside this
   repository); IbexQuant reads the files.
 
@@ -262,10 +259,10 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
   data-com, StatusInvest relabels tickers, *Earnings credited* has no date
   at all, and none of them covers every security. The distribution number
   is in every COTAHIST row since 1995.
-- **StatusInvest and yfinance as full sources.** Rejected (H3.4): they
-  revise history, cover only what they were asked, and duplicate events.
-  StatusInvest stays only where B3 says nothing, and only for dates COTAHIST
-  confirms.
+- **StatusInvest and yfinance as sources.** Rejected (H3.4): they revise
+  history, cover only what they were asked, and duplicate events. A frozen
+  StatusInvest bootstrap limited to issuers without B3 history was built
+  and then removed: B3 and the CVM forms left nothing it was needed for.
 - **Inferred splits only after review.** Rejected (H3.6): unlike a wrong
   link in H2, which merges two companies, a missing split corrupts every
   return across it, and the review list is the same either way.
@@ -283,7 +280,8 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
 - The ledger is as complete as B3's service for listed issuers, as
   complete as COTAHIST's distribution numbers for the dates of every
   security, and incomplete in amounts for issuers delisted before the first
-  B3 download, where the frozen StatusInvest snapshot fills what it can.
+  B3 download whose root B3 no longer answers for; those are fetched under
+  their old trading name or entered in `corporate_actions.yaml`.
 - Weekly B3 downloads keep the ledger current; a missed week loses nothing,
   because the cash history is cumulative.
 - Units are ISIN type `CD`, not `UN` (`BRSANBCDAM13`); H2's adjacent-rename
