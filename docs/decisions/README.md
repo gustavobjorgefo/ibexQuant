@@ -44,6 +44,7 @@ does, but *why it is not done differently*.
 | 0010 | [Data root and storage layout](0010-data-root-and-storage-layout.md) | Accepted | H0 |
 | 0011 | [COTAHIST ingestion](0011-cotahist-ingestion.md) | Accepted | H1 |
 | 0012 | [Security master](0012-security-master.md) | Accepted | H2 |
+| 0013 | [Corporate actions ledger](0013-corporate-actions-ledger.md) | Accepted | H3 |
 
 ## Pending items
 
@@ -86,7 +87,7 @@ The B3 equities data base that replaces yfinance for long backtests (see
 | H0    | Data root, storage layout, `DataStore`, `ibexquant data init` | Done        |
 | H1    | COTAHIST ingestion into daily bars, `B3Provider` (raw)        | Done        |
 | H2    | Security master: permanent identifiers across ticker changes  | Done        |
-| H3    | Corporate actions ledger                                      | Not started |
+| H3    | Corporate actions ledger                                      | Done        |
 | H4    | Anchored price adjustment                                     | Not started |
 | H5    | Point-in-time universe                                        | Not started |
 | H6    | `B3Dataset` API                                               | Not started |

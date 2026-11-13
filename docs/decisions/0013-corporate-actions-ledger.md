@@ -1,7 +1,7 @@
 # 0013 — Corporate actions ledger
 
-- Status: Proposed
-- Date: 2026-11-10
+- Status: Accepted
+- Date: 2026-11-14
 - Phase: H3
 
 ## Context
@@ -48,6 +48,8 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
 | The CVM reference forms (FRE, item 17.3) list splits, reverse splits and bonus issues with CNPJ, approval date and share counts before and after, per class; the table exists only in forms under ICVM 480 (ZIPs up to 2022). It holds every missing Bradesco, Itaú and Itaúsa bonus; counts give approximate ratios (Bradesco 2021: 1.0982 common, 1.0932 preferred) | FRE 2016–2022: 510 events | H3.14 |
 | Placing FRE events on the first ex-session after approval whose price ratio agrees: 263 of 582 company-ISIN pairs placed (123 confirming B3, 75 explaining unexplained sessions, 36 confirming inferred splits, 29 explaining jumps); the rest are events before listing or classes that never traded | Simulation on the real base | H3.14 |
 | Holders of a delisted share received another existing share at a ratio: `LAME4` → `AMER3` (0.188964), `SOMA3` → `AZZA3`, `PCAR4` → `PCAR3`, `VIVT4` → `VIVT3`, `CESP6` → `AURE3`; the H2 pairs of the old IBrX notes that are true renames are all linked | Old IBrX notes against the security master | H3.7 |
+| Review of the ex-sessions since 2010 still unexplained on IBrX members (28 cases): 14 were real events B3 does not list (20 manual entries with the other share classes hit) — bonus issues (`ITUB4` 2025, `ITSA4` 2023 and 2024, `KLBN11` 2024, `SLCE3` 2023, `CMIG4` 30.765% in 2013), the `LAME` → `AMER3` spin-off (0.18), preemptive rights (`AMAR3`, `CVCB3`, `RRRP3`) and `JBSS3` dividends; the 5 `CESP6` cases were dividends under the old trading name; `ENEV3` 2015 is an open preemptive right; the others were a cancelled dividend (`CSNA3` 2018), rights to warrants or debentures (`GOLL4`, `LIGT3`), an announcement day, or nothing found. A status for large moves was rejected: Brazilian prices move that much without events | Review of 2026-11-11 | H3.6, H3.11 |
+| Reviewed build: b3_listed 32,902, cvm_fre 290, inferred 240, manual 20 events; ex-sessions explained 23,246, inferred 240, accepted 9, unexplained 2,891, unexplained jumps 493; 3 conflicts. On IBrX members since 2010, unexplained ex-sessions are small moves, mostly cash events of issuers whose history B3 lacks (`JBSS3` from 2020) | Build of 2026-11-14 | H3.6, H3.9 |
 
 ## Decision
 
@@ -287,6 +289,9 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
   security, and incomplete in amounts for issuers delisted before the first
   B3 download whose root B3 no longer answers for; those are fetched under
   their old trading name or entered in `corporate_actions.yaml`.
+- Manual subscriptions carry `subscription_price`; manual entries for
+  rights to other instruments (warrants, debentures) are `accepted`
+  sessions, not events: H4 does not value those rights.
 - Weekly B3 downloads keep the ledger current; a missed week loses nothing,
   because the cash history is cumulative.
 - Units are ISIN type `CD`, not `UN` (`BRSANBCDAM13`); H2's adjacent-rename

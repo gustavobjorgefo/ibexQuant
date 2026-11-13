@@ -21,3 +21,13 @@
   `ibexquant data review links [--status ...] [--yaml]`.
 - Overrides root resolution (`resolve_overrides_root`, `IBEXQUANT_OVERRIDES_ROOT`).
 - `pyyaml` in the `b3` extra.
+- `ibexQuant.data.reference`: corporate actions ledger (`build_corporate_actions`,
+  `read_ledger`): ex-sessions from COTAHIST distribution numbers, events from B3's
+  listed-company service, the CVM reference forms and *Earnings credited*, price-inferred
+  splits, and `corporate_actions.yaml` overrides (`load_action_overrides`) (ADR 0013).
+- `ibexQuant.data.ingestion.b3`: readers of B3's listed-company snapshots
+  (`read_listed_companies`, cash history under current and old trading names) and of the
+  *Earnings credited* files (`read_earnings_credited`).
+- `ibexQuant.data.ingestion.cvm`: stock events of the reference forms (`read_fre_stock_events`).
+- `ibexquant data build corporate-actions [--no-overrides]` and
+  `ibexquant data review events [--status ...] [--yaml]`.
