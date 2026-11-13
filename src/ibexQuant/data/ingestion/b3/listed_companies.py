@@ -13,9 +13,11 @@ Contract
 --------
 - ``supplement/<CODE>.json`` is the answer of ``GetListedSupplementCompany``;
   ``cash_dividends/<CODE>/page-NNN.json`` the pages of
-  ``GetListedCashDividends``. A zero-byte or empty answer means B3 had
-  nothing for the code and is skipped; any other unreadable file is an
-  error.
+  ``GetListedCashDividends`` under the issuer's current trading name, and
+  ``page-<NAME>-NNN.json`` the pages under an old trading name of the same
+  root (renamed issuers keep their history under the old name). A
+  zero-byte or empty answer means B3 had nothing for the code and is
+  skipped; any other unreadable file is an error.
 - Numbers use a decimal comma and a thousands point (``1.234,56``). Dates
   are day-first; B3's placeholders ``31/12/9999`` and ``01/01/1900`` and
   empty strings are missing dates.
@@ -23,9 +25,11 @@ Contract
   divided to a value per share, and so is the closing price (H3.5).
 - Labels and the B3 factor are returned as published; turning them into
   events belongs to the ledger.
-- Snapshots are merged by keeping every row ever seen: within one snapshot,
+- Snapshots are merged by keeping every row ever seen: within one answer,
   identical rows are distinct events (installments), so each distinct row
-  is kept as many times as the snapshot that listed it most.
+  is kept as many times as the answer that listed it most. An answer is one
+  trading name in one snapshot: the same history returned under the current
+  and an old name is one history, not two.
 
 What does not belong here
 -------------------------
@@ -92,6 +96,7 @@ SUBSCRIPTION_COLUMNS: Final[tuple[str, ...]] = (
     "approved_on",
     "subscription_date",
 )
+_ANSWER: Final[str] = "answer"
 _DATE_COLUMNS: Final[frozenset[str]] = frozenset(
     {"snapshot", "last_cum_date", "approved_on", "payment_date", "subscription_date"}
 )
@@ -250,9 +255,15 @@ def _read_snapshot(folder: Path) -> dict[str, list[dict[str, Any]]]:
                     "last_cum_date": item["lastDatePriorEx"],
                     "approved_on": item.get("dateApproval") or "",
                     "closing_price": _number(item.get("closingPricePriorExDate") or "0") / quoted,
+                    _ANSWER: _trading_name_of(path),
                 }
             )
     return found
+
+
+def _trading_name_of(page: Path) -> str:
+    # page-001.json -> "" (current name); page-JBS-001.json -> "JBS".
+    return "-".join(page.stem.split("-")[1:-1])
 
 
 def _load(path: Path) -> Any:
@@ -269,7 +280,8 @@ def _load(path: Path) -> Any:
 
 
 def _merge(rows: list[dict[str, Any]], columns: tuple[str, ...]) -> pd.DataFrame:
-    table = pd.DataFrame(rows, columns=list(columns))
+    table = pd.DataFrame(rows, columns=[*columns, _ANSWER])
+    table[_ANSWER] = table[_ANSWER].astype(object).fillna("").astype(str)
     for column in columns:
         if column in _DATE_COLUMNS:
             table[column] = _dates(table[column])
@@ -278,11 +290,13 @@ def _merge(rows: list[dict[str, Any]], columns: tuple[str, ...]) -> pd.DataFrame
         else:
             table[column] = table[column].astype("str").str.strip()
     if table.empty:
-        return table
+        return table[list(columns)]
     content = [column for column in columns if column != "snapshot"]
-    # Identical rows within a snapshot are installments; the same row seen in
-    # several snapshots is one event. Keep each row its largest count.
-    counted = table.assign(copy=table.groupby(["snapshot", *content], dropna=False).cumcount())
+    # Identical rows within an answer are installments; the same row seen in
+    # several answers is one event. Keep each row its largest count.
+    counted = table.assign(
+        copy=table.groupby(["snapshot", _ANSWER, *content], dropna=False).cumcount()
+    )
     kept = counted.sort_values("snapshot").drop_duplicates([*content, "copy"], keep="last")
     return (
         kept.drop(columns="copy")

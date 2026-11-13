@@ -179,6 +179,25 @@ def test_a_row_seen_again_in_a_later_snapshot_is_one_event(
     assert len(history) == 4
 
 
+def test_the_history_under_an_old_trading_name_is_one_answer(
+    store: DataStore, snapshot: Path
+) -> None:
+    write(
+        snapshot,
+        "cash_dividends/PETR/page-PETROBRAS-001.json",
+        page(
+            history_row("0,35477261", "16/04/2025"),
+            history_row("0,35477261", "16/04/2025"),
+            history_row("0,9", "03/05/1999"),
+        ),
+    )
+    history = read_listed_companies([snapshot]).cash_history
+    assert list(history.columns) == list(CASH_HISTORY_COLUMNS)
+    assert (history["cash_amount"].round(8) == 0.35477261).sum() == 2
+    assert history["last_cum_date"].tolist().count(pd.Timestamp("1999-05-03")) == 1
+    assert len(history) == 4
+
+
 def test_snapshot_folders_ignore_other_names(store: DataStore, snapshot: Path) -> None:
     (store.raw("b3", "listed_companies") / "notes").mkdir()
     assert snapshot_folders(store) == [snapshot]

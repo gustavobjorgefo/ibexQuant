@@ -41,6 +41,7 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
 | The first full download (880 issuer codes, 2026-11-10) answered for 781, including long-delisted issuers (SADIA, BANESPA, ARACRUZ, UNIBANCO); roots of renamed issuers answer empty, and their history sits under today's code (`BHIA` from 1997, `MOTV` from 2003). A root can be reused (`TRPL` now answers for a real-estate fund) | Snapshot 2026-11-10 | H3.3, H3.4 |
 | The cash history holds 31,133 rows from 1995 for 610 codes, with share class (`ON`, `PN`, `PNA`…, `UNT`) and no ISIN | Snapshot | H3.13 |
 | Rows quoted per 1,000 shares (`quotedPerShares` 1000, most events up to 2007) give value and closing price per 1,000 shares: the closing price is 1,000 times COTAHIST's, and the published yield matches. StatusInvest copied these values as per share | 1,926 rows against COTAHIST; 169 against StatusInvest | H3.5 |
+| B3 files the cash history of a renamed issuer under its old trading name, which COTAHIST keeps: `CESP` returns 97 records (1997–2021) where the root returns nothing, and 74 roots return history under an old name (`ELETROBRAS`, `ITAUUNIBANCO`, `TAESA`); the same history can come back under both names | Download of 2026-11-10 | H3.10 |
 | Every issuer whose trading name contains `/` (`KLABIN S/A`, `AMBEV S/A`, `SADIA S/A`) returned an empty cash history | 16 issuers | H3.10 |
 | Stock events have nine labels; 247 rows deliver another asset (`assetIssued` ≠ `isinCode`): spin-offs (`MRVE3` holders received 7.215% of a `LOGG3`, `BRAP` 33.24% of a `VALE3`), mergers (`INCORPORACAO`, `LIGH` → `LIGT`) and bonuses in another class. A row whose asset is the ISIN itself with factor 100 only says the holder keeps the share | 1,032 rows, 1978–2026 | H3.5, H3.7 |
 | The first build left 562 unexplained jumps and hid small bonus issues inside ordinary moves: BBDC4 opened at about 0.91 of its previous close every year from 2010 to 2021, ITUB4 in 2013–2016, ITSA4 in 2012–2016, with no event in any source. B3's stock list also lacks PETR's 2005 split and VALE's 2004 and 2006 splits; the inferred splits found them (31 of 34 found in yfinance on the same date) | First real build | H3.14 |
@@ -200,7 +201,10 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
   - `raw/b3/listed_companies/YYYY-MM-DD/supplement/<CODE>.json` and
     `raw/b3/listed_companies/YYYY-MM-DD/cash_dividends/<CODE>/page-NNN.json`:
     one folder per download, the responses as received. `<CODE>` is the
-    issuer code (the ticker root, `PETR`). A download covers every root seen
+    issuer code (the ticker root, `PETR`). Pages asked under an old trading
+    name of the root, taken from COTAHIST, are saved beside them as
+    `page-<NAME>-NNN.json`; each trading name is a separate answer, so a
+    history B3 returns under both names counts once. A download covers every root seen
     in COTAHIST since 2000, so the snapshot itself records which issuers B3
     still describes; an empty answer is saved too.
   - `raw/b3/earnings_credited/YYYY/YYYY-MM-DD.csv`, one file per day as
