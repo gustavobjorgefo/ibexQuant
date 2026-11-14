@@ -37,6 +37,7 @@ placed events, 26,879 ex-sessions) and the B3 snapshot of the same date.
 | On the 89 sessions that combine cash and a share event, reading the cash as per old share fits the opening price better in 38, per new share in 21, and both alike in 30 | Same build | H4.2, H4.3 |
 | Subscriptions: 438 events, all with a price; in 196 the price is at or above the previous close, so the right is worth nothing | Same build | H4.2 |
 | Spin-offs (130), conversions (39) and redemptions (18) are rare; conversions and exchanges hand the holder a different security, whose series continues only if H2 chained the two | Same build | H4.2 |
+| External check, yearly total returns 2021–2025 of `PETR4`, `VALE3`, `ITUB4`, `BBDC4`, `WEGE3`, `ITSA4`, `MGLU3` against Yahoo Finance and ProfitPro: Yahoo matches to the basis point where both have the same events, and misses events B3 has (`PETR4` 2022: one of two dividends on one ex-date, −812 bp; `MGLU3` 2024). ProfitPro uses JCP net of withholding: with net JCP, 29 of 35 years agree within 15 bp. The check found a defect of the base (a chain's cash history placed twice through its old code, `ITAU` → `ITUB`: +580 to +2,435 bp a year), fixed in H3.10, and the `XPart` spin-off of 2021 (B3 adjustment −17.54% for `ITUB4`), whose target never traded | Comparison of 2026-11-14 | H4.2, H4.3 |
 
 ## Decision
 
@@ -73,7 +74,10 @@ placed events, 26,879 ex-sessions) and the B3 snapshot of the same date.
     individuals is the cash side's concern (H4.11).
   - `P_target` is the target's raw close on the ex-session; if the target
     does not trade that day, its first close within the next 5 sessions;
-    otherwise the spin-off is not applied (H4.3).
+    otherwise the spin-off is not applied (H4.3). A spin-off whose target
+    never trades (`XPart`, merged into XP on the day it was created) carries
+    instead a `value_fraction` in `corporate_actions.yaml`, B3's published
+    adjustment for the class, and its value is `value_fraction · P`.
   - The subscription term is the theoretical value of the right, from the
     theoretical ex-rights price `(P + r·S) / (1 + r)`.
   - Conversions and exchanges into a security of the **same** H2 chain are
@@ -209,9 +213,9 @@ placed events, 26,879 ex-sessions) and the B3 snapshot of the same date.
 - Unexplained ex-sessions remain visible as raw moves in adjusted series;
   the warning in H4.9 points to them, and the H3 review is how they are
   closed.
-- External check before closing the phase: total returns of `PETR4` and
-  `VALE3` over one year against an independent source, within a few basis
-  points.
+- The external check (evidence above) is repeatable with any source that
+  publishes adjusted and raw prices; agreement to a few basis points a year
+  where conventions match is the acceptance criterion.
 - New pending item **P9**: backtest engine option to execute on raw prices
   and credit event cash (JCP net of withholding) on the payment date
   (H4.11). Resolve in: backtest engine design.

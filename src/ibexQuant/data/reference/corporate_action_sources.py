@@ -59,12 +59,21 @@ SOURCE_EVENT_COLUMNS: Final[tuple[str, ...]] = (
     "share_ratio",
     "target_isin",
     "subscription_price",
+    "value_fraction",
     "payment_date",
     "approved_on",
     "source",
     "origin",
     "label",
 )
+AMOUNT_COLUMNS: Final[tuple[str, ...]] = (
+    "cash_amount",
+    "share_ratio",
+    "subscription_price",
+    "value_fraction",
+)
+"""Numeric fields of an event: per-share cash, share ratio, subscription price, and the
+fraction of the previous close a spin-off takes when its target has no price (H3.11)."""
 UNRESOLVED_COLUMNS: Final[tuple[str, ...]] = ("source", "origin", "key", "last_cum_date", "reason")
 
 CLASS_KINDS: Final[dict[str, str]] = {
@@ -438,7 +447,7 @@ def _frame(data: pd.DataFrame | list[dict[str, object]], source: Source) -> pd.D
 def _typed(frame: pd.DataFrame) -> pd.DataFrame:
     for column in ("last_cum_date", "payment_date", "approved_on"):
         frame[column] = pd.to_datetime(frame[column]).astype("datetime64[ns]")
-    for column in ("cash_amount", "share_ratio", "subscription_price"):
+    for column in AMOUNT_COLUMNS:
         frame[column] = frame[column].astype("float64")
     frame["distribution_number"] = frame["distribution_number"].astype("Int64")
     for column in ("isin", "event_type", "target_isin", "source", "origin", "label"):

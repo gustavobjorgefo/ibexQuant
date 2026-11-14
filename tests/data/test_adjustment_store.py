@@ -87,6 +87,20 @@ def test_a_spin_off_without_target_bars_is_rejected(tmp_path: Path, ledger: Data
     assert summary.rejected == {"no_target_price": 1}
 
 
+def test_a_published_fraction_prices_a_spin_off_through_the_ledger(
+    tmp_path: Path, ledger: DataStore
+) -> None:
+    root = tmp_path / "overrides"
+    root.mkdir()
+    text = SPIN_OFF_YAML.replace("note: test", "value_fraction: 0.2, note: test")
+    (root / "corporate_actions.yaml").write_text(text, encoding="utf-8")
+    build_corporate_actions(ledger, load_action_overrides(root))
+    ledger.curated("b3", "bars_daily", "year=2024", "part-0.parquet").unlink()
+    build_adjustment_factors(ledger)
+    spin = read_adjustment_factors(ledger).set_index("security_id").loc[VALE]
+    assert spin["f_total"] == pytest.approx(0.8)
+
+
 def test_factors_must_be_built_first(ledger: DataStore) -> None:
     with pytest.raises(AdjustmentFactorsNotBuiltError, match="adjustment-factors"):
         read_adjustment_factors(ledger)

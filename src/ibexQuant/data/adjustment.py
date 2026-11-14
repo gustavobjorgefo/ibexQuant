@@ -19,6 +19,8 @@ Contract
   ``f_splits = 1 / R``.
 - A factor that cannot exist (``V >= P``, no previous close, no price for a
   spin-off target) is not applied and is listed with the reason (H4.3).
+- A spin-off whose target never traded is valued by its ``value_fraction``
+  of the previous close, B3's published adjustment, when the ledger has one.
 - Conversions and exchanges into a security of the same chain are share
   events; into another security, and redemptions and ``OTHER`` events, they
   get no factor (H4.2).
@@ -258,7 +260,12 @@ def compute_factors(
     subscription = (
         ratio * np.maximum(price - placed["subscription_price"].astype("float64"), 0.0)
     ) / (1.0 + ratio)
-    target = _target_value(placed, target_closes)
+    # A spin-off with B3's published fraction needs no target price (H3.11).
+    fraction = placed["value_fraction"].astype("float64")
+    target = (fraction * price).where(
+        fraction.notna(), _target_value(placed[fraction.isna()], target_closes)
+    )
+    target = target.where(kind == EventType.SPIN_OFF, 0.0)
     placed = placed.assign(
         value=cash.fillna(0.0)
         + subscription.where(kind == EventType.SUBSCRIPTION, 0.0).fillna(0.0)

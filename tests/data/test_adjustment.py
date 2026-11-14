@@ -154,6 +154,7 @@ def event(
     ratio: float | None = None,
     price: float | None = None,
     target: str | None = None,
+    fraction: float | None = None,
     session: str = "2024-01-03",
     status: str = "confirmed",
     isin: str = SEC,
@@ -170,6 +171,7 @@ def event(
         share_ratio=ratio,
         subscription_price=price,
         target_isin=target,
+        value_fraction=fraction,
         status=status,
         ex_session=DAY(session) if status != "review" else pd.NaT,
     )
@@ -258,6 +260,12 @@ def test_a_spin_off_is_valued_at_the_targets_first_close_in_time() -> None:
     row = one(ledger(event("SPIN_OFF", ratio=0.2, target=TARGET)), targets)
     assert row["cash_value"] == pytest.approx(1.0)
     assert row["f_total"] == pytest.approx(0.9)
+
+
+def test_a_spin_off_with_a_published_fraction_needs_no_target_price() -> None:
+    row = one(ledger(event("SPIN_OFF", ratio=1.0, target=TARGET, fraction=0.1754)))
+    assert row["cash_value"] == pytest.approx(1.754)
+    assert row["f_total"] == pytest.approx(1 - 0.1754)
 
 
 def test_a_spin_off_target_priced_too_late_rejects_the_session() -> None:

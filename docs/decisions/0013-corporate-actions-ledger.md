@@ -248,7 +248,10 @@ StatusInvest snapshots and the yfinance splits of the old IBrX work.
   overrides root (H2.9), optional: `events` (add an event of any type,
   exchanges and conversions (H3.7) included, by ISIN, data-com, type,
   amount and, for spin-offs, exchanges and conversions, `target_isin`; for
-  subscriptions, `subscription_price`, which H4 needs to value the right),
+  subscriptions, `subscription_price`, which H4 needs to value the right;
+  optionally, for spin-offs whose target never trades, `value_fraction`,
+  the fraction of the previous close the spin-off takes, as B3 publishes
+  it per class (ADR 0014, H4.2)),
   `rejections` (mark a source event or an inferred one as wrong, by ISIN,
   ex-date, type and source), `accepted` (ex-sessions that need no event).
   Every entry has a note. A rejection or accepted ex-session that matches
