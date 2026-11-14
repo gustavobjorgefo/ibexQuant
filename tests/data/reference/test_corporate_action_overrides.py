@@ -35,6 +35,13 @@ events:
     share_ratio: 0.1574298678
     subscription_price: 12.84
     note: "preemptive right"
+  - isin: BRITUBACNPR1
+    last_cum_date: 2021-10-01
+    type: SPIN_OFF
+    share_ratio: 1.0
+    target_isin: BRXPARACNPR6
+    value_fraction: 0.1754
+    note: "XPart spin-off, B3 adjustment -17.54%"
 rejections:
   - isin: BRPETRACNOR9
     ex_date: 2024-04-30
@@ -61,7 +68,10 @@ def test_a_valid_file_gives_events_rejections_and_accepted(tmp_path: Path) -> No
         ["BRLAMEACNPR6", "CONVERSION", "BRAMERACNOR6", "manual"],
         ["BRODERACNPR3", "CASH_DIVIDEND", "", "manual"],
         ["BRCVCBACNOR1", "SUBSCRIPTION", "", "manual"],
+        ["BRITUBACNPR1", "SPIN_OFF", "BRXPARACNPR6", "manual"],
     ]
+    assert events.iloc[3]["value_fraction"] == 0.1754
+    assert pd.isna(events.iloc[2]["value_fraction"])
     assert events.iloc[2]["subscription_price"] == 12.84
     assert pd.isna(events.iloc[0]["subscription_price"])
     assert events.iloc[0]["share_ratio"] == 0.188964
@@ -119,6 +129,12 @@ def test_none_is_empty() -> None:
             "version: 1\nevents:\n  - {isin: BRPETRACNOR9, last_cum_date: 2024-01-02, "
             "type: SUBSCRIPTION, share_ratio: 0.1, note: x}\n",
             "subscription_price",
+        ),
+        (
+            "version: 1\nevents:\n  - {isin: BRPETRACNOR9, last_cum_date: 2024-01-02, "
+            "type: SPIN_OFF, share_ratio: 1, target_isin: BRVALEACNOR0, value_fraction: 1.2, "
+            "note: x}\n",
+            "value_fraction",
         ),
         (
             "version: 1\nevents:\n  - {isin: BRPETRACNOR9, last_cum_date: someday, "

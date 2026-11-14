@@ -15,7 +15,9 @@ Contract
 - Dates are ISO (``2024-04-30``); types are :class:`EventType` names; cash
   types need ``cash_amount``, the others ``share_ratio``; spin-offs,
   exchanges and conversions also need ``target_isin``, and subscriptions
-  ``subscription_price``.
+  ``subscription_price``. A spin-off may carry ``value_fraction``, the
+  fraction of the previous close it takes (B3's published adjustment), for a
+  target that never trades.
 - Whether an entry matches something in the data is checked by the build.
 
 What does not belong here
@@ -35,6 +37,7 @@ import pandas as pd
 import yaml
 
 from ibexQuant.data.reference.corporate_action_sources import (
+    AMOUNT_COLUMNS,
     SOURCE_EVENT_COLUMNS,
     Source,
 )
@@ -167,6 +170,11 @@ def _event(entry: object, where: str) -> dict[str, object]:
         row["target_isin"] = _isin(fields, "target_isin", where)
     if kind is EventType.SUBSCRIPTION:
         row["subscription_price"] = _number(fields, "subscription_price", where)
+    if kind is EventType.SPIN_OFF and "value_fraction" in fields:
+        fraction = _number(fields, "value_fraction", where)
+        if not 0.0 < fraction < 1.0:
+            raise OverridesFormatError(f"{where}: 'value_fraction' must be between 0 and 1.")
+        row["value_fraction"] = fraction
     return row
 
 
@@ -240,7 +248,7 @@ def _events(rows: list[dict[str, object]]) -> pd.DataFrame:
     frame["origin"] = "overrides"
     for column in ("last_cum_date", "payment_date", "approved_on"):
         frame[column] = pd.to_datetime(frame[column]).astype("datetime64[ns]")
-    for column in ("cash_amount", "share_ratio", "subscription_price"):
+    for column in AMOUNT_COLUMNS:
         frame[column] = frame[column].astype("float64")
     frame["distribution_number"] = frame["distribution_number"].astype("Int64")
     for column in ("isin", "event_type", "target_isin", "label"):

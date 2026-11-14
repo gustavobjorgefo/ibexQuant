@@ -57,6 +57,7 @@ from ibexQuant.data.reference.corporate_action_overrides import (
     Rejection,
 )
 from ibexQuant.data.reference.corporate_action_sources import (
+    AMOUNT_COLUMNS,
     SOURCE_EVENT_COLUMNS,
     SOURCE_PRIORITY,
     UNRESOLVED_COLUMNS,
@@ -109,6 +110,7 @@ EVENT_COLUMNS: Final[tuple[str, ...]] = (
     "cash_amount",
     "share_ratio",
     "subscription_price",
+    "value_fraction",
     "target_isin",
     "payment_date",
     "approved_on",
@@ -595,7 +597,7 @@ def _finish_events(events: pd.DataFrame, security_of: dict[str, str]) -> pd.Data
     )
     for column in ("ex_date", "last_cum_date", "payment_date", "approved_on", "ex_session"):
         events[column] = pd.to_datetime(events[column]).astype("datetime64[ns]")
-    for column in ("cash_amount", "share_ratio", "subscription_price"):
+    for column in AMOUNT_COLUMNS:
         events[column] = events[column].astype("float64")
     for column in ("target_isin", "origin", "label", "confirmed_by"):
         events[column] = events[column].astype(object).fillna("").astype(str)

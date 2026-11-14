@@ -45,6 +45,7 @@ does, but *why it is not done differently*.
 | 0011 | [COTAHIST ingestion](0011-cotahist-ingestion.md) | Accepted | H1 |
 | 0012 | [Security master](0012-security-master.md) | Accepted | H2 |
 | 0013 | [Corporate actions ledger](0013-corporate-actions-ledger.md) | Accepted | H3 |
+| 0014 | [Anchored price adjustment](0014-anchored-adjustment.md) | Accepted | H4 |
 
 ## Pending items
 
@@ -61,6 +62,7 @@ resolved; when it is, the resolving record is linked here.
 | P6 | Backtest engine produces the trades table (`entry_time`, `exit_time`, result per trade) and positions, enabling exposure and turnover metrics from holdings (see 0009) | Backtest engine design |
 | P7 | `analytics/inference.py`: normality, significance of the mean, Probabilistic Sharpe Ratio; scipy as an optional `stats` extra (see 0009) | After plotting |
 | P8 | Deflated Sharpe Ratio and multiple-testing corrections, which need the number of strategies tried (see 0009) | Phase 5 |
+| P9 | Backtest engine option: execute on raw prices and credit event cash (JCP net of withholding) on the payment date, never combined with adjusted prices (see 0014) | Backtest engine design |
 
 ## Roadmap
 
@@ -88,7 +90,7 @@ The B3 equities data base that replaces yfinance for long backtests (see
 | H1    | COTAHIST ingestion into daily bars, `B3Provider` (raw)        | Done        |
 | H2    | Security master: permanent identifiers across ticker changes  | Done        |
 | H3    | Corporate actions ledger                                      | Done        |
-| H4    | Anchored price adjustment                                     | Not started |
+| H4    | Anchored price adjustment                                     | Done        |
 | H5    | Point-in-time universe                                        | Not started |
 | H6    | `B3Dataset` API                                               | Not started |
 

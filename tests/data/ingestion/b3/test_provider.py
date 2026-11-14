@@ -20,6 +20,7 @@ from support.cotahist import detail, lines_for, write_zip
 from ibexQuant.data.ingestion.b3 import B3Provider, build_bars_daily
 from ibexQuant.data.ingestion.provider import OHLCV_FIELDS
 from ibexQuant.data.ingestion.validation import check_bars
+from ibexQuant.data.reference import SecurityMasterNotBuiltError
 from ibexQuant.data.store import DataStore
 
 # --- Fixtures ---
@@ -128,8 +129,8 @@ def test_companies_outside_bdi_02_are_served(provider: B3Provider) -> None:
     assert len(bars) == 1
 
 
-def test_adjusted_prices_are_refused_until_h4(provider: B3Provider) -> None:
-    with pytest.raises(ValueError, match="adjusted=False"):
+def test_adjusted_prices_need_the_security_master(provider: B3Provider) -> None:
+    with pytest.raises(SecurityMasterNotBuiltError):
         provider.get_bars("PETR4", "2024-01-01", "2024-12-31")
 
 

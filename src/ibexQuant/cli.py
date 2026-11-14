@@ -26,6 +26,9 @@ Commands
     Build the corporate actions ledger from ``bars_daily``, the security
     master, B3's raw files, the CVM reference forms and the override file
     (ADR 0013).
+``ibexquant data build adjustment-factors``
+    Compute one adjustment factor per ex-session of the ledger into
+    ``derived/b3`` (ADR 0014).
 ``ibexquant data review events [--status STATUS ...] [--yaml]``
     Print the ex-sessions waiting for review (by default inferred splits and
     unexplained jumps) with the prices around them, or, with ``--yaml``,
@@ -302,6 +305,28 @@ def _data_build_corporate_actions(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _data_build_adjustment_factors(args: argparse.Namespace) -> int:
+    """Compute the adjustment factors and print their summary."""
+    from ibexQuant.data.adjustment import build_adjustment_factors
+    from ibexQuant.data.reference import SecurityMasterError
+    from ibexQuant.data.reference.corporate_actions import LedgerNotBuiltError
+
+    try:
+        summary = build_adjustment_factors(DataStore.open())
+    except (SecurityMasterError, LedgerNotBuiltError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+
+    def counts(values: dict[str, int]) -> str:
+        return ", ".join(f"{key} {count}" for key, count in values.items()) or "none"
+
+    print(f"factors: {summary.factors}")
+    print(f"rejected: {counts(summary.rejected)}")
+    print(f"ignored events: {counts(summary.ignored)}")
+    print(f"ex-sessions kept raw: {counts(summary.unexplained)}")
+    return EXIT_OK
+
+
 def _data_review_events(args: argparse.Namespace) -> int:
     """Print the ex-sessions to review, as a table or as override entries to edit."""
     import pandas as pd
@@ -419,6 +444,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Build without corporate_actions.yaml.",
     )
     actions.set_defaults(handler=_data_build_corporate_actions)
+    factors = targets.add_parser(
+        "adjustment-factors", help="Price adjustment factors from the ledger."
+    )
+    factors.set_defaults(handler=_data_build_adjustment_factors)
 
     review = data_commands.add_parser("review", help="Review decisions waiting for a human.")
     subjects = review.add_subparsers(dest="subject", required=True, metavar="SUBJECT")

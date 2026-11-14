@@ -31,3 +31,13 @@
 - `ibexQuant.data.ingestion.cvm`: stock events of the reference forms (`read_fre_stock_events`).
 - `ibexquant data build corporate-actions [--no-overrides]` and
   `ibexquant data review events [--status ...] [--yaml]`.
+- `ibexQuant.data.adjustment`: anchored price adjustment (`build_adjustment_factors`,
+  `read_adjustment_factors`, `adjust`, `AdjustmentMode`): one factor per ex-session from the
+  ledger (gross cash, spin-offs, subscription rights, share ratios), applied relative to an
+  anchor date (ADR 0014); `ibexquant data build adjustment-factors`.
+- `B3Provider.get_bars` serves adjusted bars by default (`total_return` or `splits`, `anchor`
+  defaulting to `end`) and warns about unexplained jumps in the range.
+- `corporate_actions.yaml`: `value_fraction` for spin-offs whose target never trades.
+
+### Fixed
+- B3 cash history counted once when two codes of one chain (`ITAU`, `ITUB`) return it.
