@@ -16,7 +16,13 @@ Contract
   trades the same security under another ticker (``PETR4F``) and stays in
   ``curated/`` for liquidity studies.
 - ``volume`` is the number of shares traded.
-- Prices are raw: ``adjusted=True`` raises ``ValueError`` until H4.
+- ``adjusted=True`` (the default) serves prices adjusted relative to an
+  anchor date (ADR 0014): ``total_return`` by default, or ``splits``; the
+  anchor defaults to ``end`` and may not precede it. Factors come from the
+  derived factor table, joined by security, so a followed ticker is adjusted
+  along its whole chain. ``adjusted=False`` serves raw prices.
+- A served range that contains an unexplained jump of the ledger is logged
+  as a warning: the raw move stays in the adjusted series (H4.9).
 - Renames are followed by default (ADR 0012, H2.14): a ticker is resolved
   to its security, and the security's whole round-lot history in the range
   is served under the requested ticker. ``follow_renames=False`` serves the
@@ -26,6 +32,7 @@ Contract
 What does not belong here
 -------------------------
 - Building the table — see ``bars_daily``.
+- The factor arithmetic — see ``ibexQuant.data.adjustment``.
 - Value checks and calendar alignment — see ``check_bars`` and
   ``align_to_calendar``, applied to the result by the caller.
 """
@@ -34,7 +41,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import pandas as pd
 
@@ -42,9 +49,13 @@ from ibexQuant.data.ingestion.b3.bars_daily import CURATED_PARTS, PARTITION_FILE
 from ibexQuant.data.ingestion.provider import DateLike, MarketDataProvider
 from ibexQuant.data.store import DataStore
 
+if TYPE_CHECKING:
+    from ibexQuant.data.adjustment import AdjustmentMode
+
 logger: logging.Logger = logging.getLogger(__name__)
 
 ROUND_LOT_MARKET: Final[int] = 10
+ADJUSTED_MODES: Final[tuple[str, ...]] = ("total_return", "splits")
 _SOURCE_COLUMNS: Final[dict[str, str]] = {
     "open": "open",
     "high": "high",
@@ -69,8 +80,9 @@ class B3Provider(MarketDataProvider):
     Examples
     --------
     >>> provider = B3Provider(DataStore.open())  # doctest: +SKIP
+    >>> provider.get_bars(["PETR4", "VALE3"], "2024-01-01", "2024-12-31")  # doctest: +SKIP
     >>> provider.get_bars(
-    ...     ["PETR4", "VALE3"], "2024-01-01", "2024-12-31", adjusted=False
+    ...     "PETR4", "2019-01-01", "2019-12-31", anchor="2019-12-31", adjustment="splits"
     ... )  # doctest: +SKIP
     """
 
@@ -88,9 +100,12 @@ class B3Provider(MarketDataProvider):
         end: DateLike,
         fields: Sequence[str] | None = None,
         adjusted: bool = True,
+        *,
+        anchor: DateLike | None = None,
+        adjustment: str | None = None,
     ) -> pd.DataFrame:
         """
-        Return raw daily bars for one or more B3 tickers.
+        Return daily bars for one or more B3 tickers.
 
         See :meth:`MarketDataProvider.get_bars` for the shared contract. With
         ``follow_renames`` (the default), each ticker is resolved to its
@@ -98,22 +113,32 @@ class B3Provider(MarketDataProvider):
         whole security's history in the range is returned under that ticker
         (ADR 0012, H2.14).
 
+        Parameters
+        ----------
+        anchor : str or pandas.Timestamp, optional
+            Date the adjusted prices are relative to: bars on and after it are
+            raw (ADR 0014, H4.4). Defaults to ``end``; may not precede it.
+        adjustment : {"total_return", "splits"}, optional
+            Events removed by the adjustment. Defaults to ``"total_return"``.
+
         Raises
         ------
         ValueError
-            If ``adjusted`` is true (not available before H4), if ``fields``
-            is invalid, if ``start`` is after ``end``, if no requested ticker
-            has data in the range, if two requested tickers are the same
-            security, or (without ``follow_renames``) if a ticker has two rows
-            on one session.
+            If ``anchor`` or ``adjustment`` is given with ``adjusted=False``,
+            if ``adjustment`` is unknown, if ``anchor`` precedes ``end``, if
+            ``fields`` is invalid, if ``start`` is after ``end``, if no
+            requested ticker has data in the range, if two requested tickers
+            are the same security, or (without ``follow_renames``) if a ticker
+            has two rows on one session.
         SecurityMasterNotBuiltError
-            With ``follow_renames``, if the security master was never built.
+            With ``follow_renames`` or ``adjusted``, if the security master was
+            never built.
+        AdjustmentFactorsNotBuiltError
+            With ``adjusted``, if the factor table was never built.
+        StaleAdjustmentFactorsError
+            With ``adjusted``, if the ledger changed after the factors were built.
         """
-        if adjusted:
-            raise ValueError(
-                "B3Provider serves raw prices only until anchored adjustment (H4); "
-                "pass adjusted=False."
-            )
+        mode = self._resolve_adjustment(adjusted, anchor, adjustment)
         columns = self._resolve_fields(fields)
         tickers = [symbols] if isinstance(symbols, str) else list(dict.fromkeys(symbols))
         first, last = pd.Timestamp(start).normalize(), pd.Timestamp(end).normalize()
@@ -135,6 +160,14 @@ class B3Provider(MarketDataProvider):
             logger.warning("No B3 data for %s from %s to %s", ticker, first.date(), last.date())
         if rows.empty:
             raise ValueError(f"No B3 data for {tickers} between {first.date()} and {last.date()}.")
+        if mode is not None:
+            pivot = last if anchor is None else pd.Timestamp(anchor).normalize()
+            if pivot < last:
+                raise ValueError(
+                    f"anchor ({pivot.date()}) is before end ({last.date()}): bars after it "
+                    "would keep unadjusted jumps."
+                )
+            rows = self._adjusted(rows, pivot, mode, first, last)
 
         bars = pd.DataFrame(
             {field: rows[_SOURCE_COLUMNS[field]].to_numpy(dtype="float64") for field in columns},
@@ -149,6 +182,73 @@ class B3Provider(MarketDataProvider):
         return bars.sort_index()
 
     # --- helpers ---
+
+    @staticmethod
+    def _resolve_adjustment(
+        adjusted: bool, anchor: DateLike | None, adjustment: str | None
+    ) -> AdjustmentMode | None:
+        """The adjustment mode, or ``None`` for raw bars."""
+        # Imported here for the same reason as SecurityMaster (see _read_securities).
+        from ibexQuant.data.adjustment import AdjustmentMode
+
+        if not adjusted:
+            if anchor is not None or adjustment is not None:
+                raise ValueError("anchor and adjustment apply to adjusted bars only.")
+            return None
+        name = adjustment or AdjustmentMode.TOTAL_RETURN
+        if name not in ADJUSTED_MODES:
+            raise ValueError(
+                f"adjustment must be one of {list(ADJUSTED_MODES)}, got {name!r}; "
+                "for raw bars pass adjusted=False."
+            )
+        return AdjustmentMode(name)
+
+    def _adjusted(
+        self,
+        rows: pd.DataFrame,
+        anchor: pd.Timestamp,
+        mode: AdjustmentMode,
+        first: pd.Timestamp,
+        last: pd.Timestamp,
+    ) -> pd.DataFrame:
+        """Apply the anchored factors to raw rows and warn about unexplained jumps."""
+        from ibexQuant.data.adjustment import adjust, read_adjustment_factors
+
+        if "security_id" not in rows:
+            rows = rows.assign(security_id=rows["isin"].map(self._security_of_isin()))
+        factors = read_adjustment_factors(self._store)
+        self._warn_unexplained_jumps(rows, first, last)
+        frame = rows.rename(columns={"volume_shares": "volume"})
+        frame = adjust(frame, factors, anchor, mode)
+        return frame.rename(columns={"volume": "volume_shares"})
+
+    def _security_of_isin(self) -> dict[str, str]:
+        from ibexQuant.data.reference import SecurityMaster
+
+        table = SecurityMaster.load(self._store).table
+        return dict(zip(table["isin"].astype(str), table["security_id"].astype(str), strict=True))
+
+    def _warn_unexplained_jumps(
+        self, rows: pd.DataFrame, first: pd.Timestamp, last: pd.Timestamp
+    ) -> None:
+        from ibexQuant.data.reference.corporate_actions import ExSessionStatus, read_ledger
+
+        _, ex = read_ledger(self._store)
+        jumps = ex[
+            (ex["status"] == ExSessionStatus.UNEXPLAINED_JUMP)
+            & ex["security_id"].isin(set(rows["security_id"]))
+            & (ex["session_date"] > first)
+            & (ex["session_date"] <= last)
+        ]
+        for ticker, day, ratio in zip(
+            jumps["ticker"], jumps["session_date"].dt.date, jumps["open_ratio"], strict=True
+        ):
+            logger.warning(
+                "Unexplained jump kept in adjusted bars: %s on %s (open / previous close %.3f)",
+                ticker,
+                day,
+                ratio,
+            )
 
     def _read_securities(
         self, tickers: list[str], first: pd.Timestamp, last: pd.Timestamp
@@ -180,12 +280,18 @@ class B3Provider(MarketDataProvider):
         rows = self._read(wanted, first, last)
         keys = list(zip(rows["ticker"].astype(str), rows["isin"].astype(str), strict=True))
         labels = pd.Series([label_of.get(key) for key in keys], index=rows.index, dtype="object")
-        rows = rows.assign(label=labels).dropna(subset=["label"])
+        rows = rows.assign(
+            label=labels, security_id=labels.map(self._security_by_label(security_of))
+        ).dropna(subset=["label"])
         # A security trading under two tickers on one session (a change of ticker
         # with the same ISIN): the more traded row represents the session.
         rows = rows.sort_values("volume_shares", ascending=False, kind="stable")
         rows = rows.drop_duplicates(subset=["session_date", "label"], keep="first")
         return rows.reset_index(drop=True)
+
+    @staticmethod
+    def _security_by_label(security_of: dict[str, str]) -> dict[str, str]:
+        return {ticker: security for security, ticker in security_of.items()}
 
     def _read(self, tickers: list[str], first: pd.Timestamp, last: pd.Timestamp) -> pd.DataFrame:
         """Read the partitions that overlap ``[first, last]``, round lot only."""

@@ -46,6 +46,8 @@ def bars_rows(
             "market_type": 10,
             "distribution_number": number,
             "open": open_,
+            "high": max(open_, close),
+            "low": min(open_, close),
             "close": close,
             "volume_shares": 1000,
         }
