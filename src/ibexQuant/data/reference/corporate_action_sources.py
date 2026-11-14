@@ -187,7 +187,10 @@ def listed_events(
     history_isins, unresolved = _class_isins(listed.cash_history, locator)
     history = _cash(listed.cash_history, history_isins, "cash_history")
     subscriptions = _subscriptions(listed.subscriptions)
-    cash = _union_by_count([recent, history])
+    # Codes of one chain (ITAU and ITUB) both answer with the chain's whole history,
+    # and both place it on the ISIN in force: each code is one answer.
+    by_code = [frame for _, frame in history.groupby("origin", sort=True)]
+    cash = _union_by_count([recent, *by_code])
     events = pd.concat([stock, cash, subscriptions], ignore_index=True)
     return _keep_skeleton_isins(events), unresolved
 

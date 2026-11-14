@@ -136,6 +136,23 @@ def test_cash_history_is_placed_by_class_and_date(locator: IsinLocator) -> None:
     ]
 
 
+def test_two_codes_of_one_chain_count_a_history_once(locator: IsinLocator) -> None:
+    events, _ = listed_events(
+        listed(
+            history=[
+                history_row("VVAR", "ON", "2022-01-03", 0.2),
+                history_row("BHIA", "ON", "2022-01-03", 0.2),
+                history_row("BHIA", "ON", "2022-01-03", 0.2),
+                history_row("BHIA", "ON", "2022-02-01", 0.3),
+            ]
+        ),
+        locator,
+    )
+    placed = events.sort_values("last_cum_date")
+    assert placed["isin"].tolist() == [VIIA, VIIA, VIIA]
+    assert placed["cash_amount"].tolist() == [0.2, 0.2, 0.3]
+
+
 def test_recent_cash_repeating_the_history_is_one_event_and_installments_stay(
     locator: IsinLocator,
 ) -> None:
