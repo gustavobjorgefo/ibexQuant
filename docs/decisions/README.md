@@ -45,7 +45,7 @@ does, but *why it is not done differently*.
 | 0011 | [COTAHIST ingestion](0011-cotahist-ingestion.md) | Accepted | H1 |
 | 0012 | [Security master](0012-security-master.md) | Accepted | H2 |
 | 0013 | [Corporate actions ledger](0013-corporate-actions-ledger.md) | Accepted | H3 |
-| 0014 | [Anchored price adjustment](0014-anchored-adjustment.md) | Proposed | H4 |
+| 0014 | [Anchored price adjustment](0014-anchored-adjustment.md) | Accepted | H4 |
 
 ## Pending items
 
@@ -90,7 +90,7 @@ The B3 equities data base that replaces yfinance for long backtests (see
 | H1    | COTAHIST ingestion into daily bars, `B3Provider` (raw)        | Done        |
 | H2    | Security master: permanent identifiers across ticker changes  | Done        |
 | H3    | Corporate actions ledger                                      | Done        |
-| H4    | Anchored price adjustment                                     | Not started |
+| H4    | Anchored price adjustment                                     | Done        |
 | H5    | Point-in-time universe                                        | Not started |
 | H6    | `B3Dataset` API                                               | Not started |
 

@@ -1,6 +1,6 @@
 # 0014 — Anchored price adjustment
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-14
 - Phase: H4
 
@@ -215,7 +215,9 @@ placed events, 26,879 ex-sessions) and the B3 snapshot of the same date.
   closed.
 - The external check (evidence above) is repeatable with any source that
   publishes adjusted and raw prices; agreement to a few basis points a year
-  where conventions match is the acceptance criterion.
+  where conventions match is the acceptance criterion. After the fixes, the base agrees
+  with ProfitPro (net JCP) within 15 bp in 31 of 35 years, `ITUB4` 2021
+  included (−17.14% in both); the rest are under 90 bp.
 - New pending item **P9**: backtest engine option to execute on raw prices
   and credit event cash (JCP net of withholding) on the payment date
   (H4.11). Resolve in: backtest engine design.
