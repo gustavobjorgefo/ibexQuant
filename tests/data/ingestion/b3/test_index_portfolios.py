@@ -45,6 +45,22 @@ ITUB = ("ITUB4", "ITAUUNIBANCO", "PN  ED  N1", 1_000_000, 100.0)
             PortfolioSource.THIRD_PREVIEW,
             "2017-09",
         ),
+        (
+            "3 PREVIA do IBOVESPA para Janeiro a Abril de 2021",
+            PortfolioSource.THIRD_PREVIEW,
+            "2021-01",
+        ),
+        ("3º Prévia do IBOVESPA para maio de 2021", PortfolioSource.THIRD_PREVIEW, "2021-05"),
+        (
+            "Terceira Prévia do IBOVESPA para maio de 2021",
+            PortfolioSource.THIRD_PREVIEW,
+            "2021-05",
+        ),
+        (
+            "Segunda Prévia do IBOVESPA para maio de 2021",
+            PortfolioSource.SECOND_PREVIEW,
+            "2021-05",
+        ),
         ("Virada do IBOVESPA para janeiro de 2025", PortfolioSource.DEFINITIVE, "2025-01"),
         ("2ª Prévia do IBOVESPA para maio de 2026", PortfolioSource.SECOND_PREVIEW, "2026-05"),
     ],
@@ -58,6 +74,7 @@ def test_titles_give_kind_and_period(title: str, source: PortfolioSource, period
     [
         ("Carteira do IBOVESPA para maio de 2026", "kind"),
         ("1ª Prévia do IBOVESPA para maio de 2026", "kind"),
+        ("13 Prévia do IBOVESPA para maio de 2026", "kind"),
         ("3ª Prévia do IBOVESPA para junho de 2026", "period"),
         ("3ª Prévia do IBOVESPA", "period"),
     ],

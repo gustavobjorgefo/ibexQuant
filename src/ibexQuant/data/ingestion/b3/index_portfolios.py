@@ -87,8 +87,8 @@ _TICKER: Final[re.Pattern[str]] = re.compile(r"^[A-Z0-9]{4}\d{1,2}$")
 _DATE_TEXT: Final[re.Pattern[str]] = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
 _TITLE_KIND: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     (re.compile(r"\bvirada\b"), "definitive"),
-    (re.compile(r"\b3\s*a\s*previa\b"), "third_preview"),
-    (re.compile(r"\b2\s*a\s*previa\b"), "second_preview"),
+    (re.compile(r"\b(?:3\s*[ao]?|terceira)\s*previa\b"), "third_preview"),
+    (re.compile(r"\b(?:2\s*[ao]?|segunda)\s*previa\b"), "second_preview"),
 )
 _TITLE_PERIOD: Final[re.Pattern[str]] = re.compile(
     r"\bpara\s+([a-z]+)(?:\s+a\s+[a-z]+)?\s+de\s+(\d{4})\b"

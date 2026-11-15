@@ -216,9 +216,21 @@ def test_files_of_one_kind_that_disagree_stop_the_build(store: DataStore) -> Non
         build_universe(store, PeriodOverrides.none())
 
 
-def test_an_unreadable_file_stops_the_build(store: DataStore) -> None:
-    add_workbook(store, "bad.xlsx", "Carteira teórica", {"IBOV": [member("PETR4")]}, "2024-08-28")
-    with pytest.raises(UniverseBuildError, match="bad.xlsx: cannot tell the kind"):
+def test_every_unreadable_file_is_listed_before_the_build_stops(store: DataStore) -> None:
+    add_workbook(store, "bad1.xlsx", "Carteira teórica", {"IBOV": [member("PETR4")]}, "2024-08-28")
+    add_workbook(
+        store, "bad2.xlsx", "3ª Prévia para junho", {"IBOV": [member("PETR4")]}, "2024-08-28"
+    )
+    with pytest.raises(UniverseBuildError) as caught:
+        build_universe(store, PeriodOverrides.none())
+    lines = str(caught.value).splitlines()
+    assert lines[0].startswith("bad1.xlsx: cannot tell the kind")
+    assert lines[1].startswith("bad2.xlsx: cannot tell the period")
+
+
+def test_an_unreadable_retroactive_csv_stops_the_build(store: DataStore) -> None:
+    add_retroactive(store, "2003-02,PETR4,PETROBRAS,PN,100\n")
+    with pytest.raises(UniverseBuildError, match="malformed period"):
         build_universe(store, PeriodOverrides.none())
 
 

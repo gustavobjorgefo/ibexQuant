@@ -174,8 +174,8 @@ def build_universe(store: DataStore, overrides: PeriodOverrides) -> UniverseSumm
     UniverseNotBuiltError
         If there are no bars or no master.
     UniverseBuildError
-        If a raw file cannot be read, two files of one kind disagree, or an
-        override breaks the calendar.
+        If raw files cannot be read (all of them are listed), two files of one
+        kind disagree, or an override breaks the calendar.
     SecurityMasterNotBuiltError
         If the master was never built.
     """
@@ -189,25 +189,33 @@ def build_universe(store: DataStore, overrides: PeriodOverrides) -> UniverseSumm
     root = store.raw(*RAW_PARTS)
     inputs: dict[str, str | None] = {}
     candidates: list[pd.DataFrame] = []
-    try:
-        for path in workbook_paths(root / WORKBOOKS_DIR):
-            inputs[f"{WORKBOOKS_DIR}/{path.name}"] = _sha256(path)
+    # Every unreadable file is reported at once, so one run lists all fixes to make.
+    problems: list[str] = []
+    for path in workbook_paths(root / WORKBOOKS_DIR):
+        inputs[f"{WORKBOOKS_DIR}/{path.name}"] = _sha256(path)
+        try:
             book = read_workbook(path)
-            candidates.append(
-                book.members.assign(
-                    period=book.period, source=book.source.value, source_file=path.name
-                )
+        except IndexPortfolioFormatError as error:
+            problems.append(str(error))
+            continue
+        candidates.append(
+            book.members.assign(
+                period=book.period, source=book.source.value, source_file=path.name
             )
-        retroactive = root / RETROACTIVE_DIR / RETROACTIVE_FILE
-        if retroactive.is_file():
-            inputs[f"{RETROACTIVE_DIR}/{RETROACTIVE_FILE}"] = _sha256(retroactive)
+        )
+    retroactive = root / RETROACTIVE_DIR / RETROACTIVE_FILE
+    if retroactive.is_file():
+        inputs[f"{RETROACTIVE_DIR}/{RETROACTIVE_FILE}"] = _sha256(retroactive)
+        try:
             candidates.append(
                 read_retroactive(retroactive).assign(
                     source=PortfolioSource.RETROACTIVE.value, source_file=retroactive.name
                 )
             )
-    except IndexPortfolioFormatError as error:
-        raise UniverseBuildError(str(error)) from error
+        except IndexPortfolioFormatError as error:
+            problems.append(str(error))
+    if problems:
+        raise UniverseBuildError("\n".join(problems))
     inputs["index_periods.yaml"] = overrides.sha256
 
     members = _deduplicate(pd.concat(candidates, ignore_index=True)) if candidates else None
