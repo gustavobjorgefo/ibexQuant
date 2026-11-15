@@ -38,6 +38,14 @@
 - `B3Provider.get_bars` serves adjusted bars by default (`total_return` or `splits`, `anchor`
   defaulting to `end`) and warns about unexplained jumps in the range.
 - `corporate_actions.yaml`: `value_fraction` for spin-offs whose target never trades.
+- `ibexQuant.data.universe`: index periods from the B3 calendar and three rule versions
+  (`index_periods`, `assign_periods`, `index_periods.yaml` overrides) and index compositions
+  by period from B3's workbooks and retroactive series, resolved to securities
+  (`build_universe`, `read_index_constituents`, `read_index_periods`) (ADR 0015);
+  `ibexquant data build universe [--no-overrides]` and `ibexquant data review universe`.
+- `ibexQuant.data.ingestion.b3`: readers of B3's index portfolio workbooks and of the
+  retroactive Ibovespa CSV (`read_workbook`, `read_retroactive`); `openpyxl` joins the `b3`
+  extra.
 
 ### Fixed
 - B3 cash history counted once when two codes of one chain (`ITAU`, `ITUB`) return it.
