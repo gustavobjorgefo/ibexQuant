@@ -365,7 +365,19 @@ def _data_build_universe(args: argparse.Namespace) -> int:
     print(f"unresolved tickers by index: {counts(summary.unresolved)}")
     for row in summary.unresolved_strict:
         print(f"  {row['index']} {row['period']} {row['ticker']}")
-    print(f"IBOV periods without composition: {len(summary.ibov_gaps)}")
+    print(f"IBOV periods from the liquidity rule: {len(summary.liquidity_periods)}")
+    print(f"IBOV periods without composition: {len(summary.ibov_gaps)}", end="")
+    print(f" ({', '.join(summary.ibov_gaps)})" if summary.ibov_gaps else "")
+    if summary.liquidity_overlap:
+        shares = list(summary.liquidity_overlap.values())
+        print(
+            f"liquidity rule vs real IBOV: mean overlap {sum(shares) / len(shares):.1%}, "
+            f"lowest {min(shares):.1%} over {len(shares)} portfolios"
+        )
+    print(f"exits inside a period: {counts(summary.exits)}")
+    print(f"members absent on the first session: {counts(summary.absent_at_start)}")
+    for row in summary.absent_at_start_strict:
+        print(f"  {row['index']} {row['period']} {row['ticker']}")
     if summary.outside_calendar:
         print(f"compositions outside the calendar: {', '.join(summary.outside_calendar)}")
     if summary.inputs["index_periods.yaml"] is None:

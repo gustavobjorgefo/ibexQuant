@@ -21,15 +21,22 @@ Contract
   it did not carry that ticker then (H5.5). An unresolved ticker keeps an
   empty ``security_id`` and is listed in the summary; fixes go to
   ``ticker_links.yaml``.
-- The build reads only raw files, the bars and the master: it can be rerun at
-  any time and gives the same tables.
+- ``IBOV`` periods without a composition from B3 (before 2003, May 2014 to
+  May 2017) take the liquidity rule (source ``liquidity_rule``), with as many
+  members as the nearest real portfolio; the rule's overlap with the real
+  index is reported for every real portfolio from :data:`OVERLAP_FROM`.
+- Members whose security stops trading inside the period are written to
+  ``curated/b3/index_exits.parquet`` (H5.8); members of a period that did not
+  trade on its first session and are not exits are counted in the summary.
+- The build reads only raw files, the bars, the master and the ledger: it can
+  be rerun at any time and gives the same tables.
 
 What does not belong here
 -------------------------
 - Reading the files — see ``ibexQuant.data.ingestion.b3.index_portfolios``.
 - Period dates — see ``calendar``.
-- Filling the periods without a composition with the liquidity rule, and the
-  mask — later steps of H5.
+- The ranking itself — see ``liquidity``; finding exits — see ``exits``; the
+  mask — see ``mask``.
 """
 
 from __future__ import annotations
@@ -44,8 +51,6 @@ from typing import Final
 
 import pandas as pd
 
-from ibexQuant.data.ingestion.b3.bars_daily import CURATED_PARTS as BARS_PARTS
-from ibexQuant.data.ingestion.b3.bars_daily import PARTITION_FILE
 from ibexQuant.data.ingestion.b3.index_portfolios import (
     RAW_PARTS,
     RETROACTIVE_DIR,
@@ -59,14 +64,27 @@ from ibexQuant.data.ingestion.b3.index_portfolios import (
     read_workbook,
     workbook_paths,
 )
+from ibexQuant.data.reference.corporate_actions import LedgerNotBuiltError, read_ledger
 from ibexQuant.data.reference.security_master import SecurityMaster
 from ibexQuant.data.store import DataStore
 from ibexQuant.data.store.atomic import replace_atomically
 from ibexQuant.data.universe.calendar import PeriodOverrides, index_periods
+from ibexQuant.data.universe.errors import UniverseBuildError, UniverseNotBuiltError
+from ibexQuant.data.universe.exits import find_exits, last_sessions
+from ibexQuant.data.universe.liquidity import (
+    IBOV_LIQUIDITY,
+    ROUND_LOT_MARKET,
+    LiquiditySettings,
+    TradedValues,
+    base_session,
+    read_traded_values,
+    select_by_liquidity,
+)
 
 CURATED_PARTS: Final[tuple[str, ...]] = ("b3",)
 CONSTITUENTS_FILE: Final[str] = "index_constituents.parquet"
 PERIODS_TABLE_FILE: Final[str] = "index_periods.parquet"
+EXITS_FILE: Final[str] = "index_exits.parquet"
 SUMMARY_FILE: Final[str] = "index_constituents.json"
 SUMMARY_SCHEMA_VERSION: Final[int] = 1
 
@@ -86,20 +104,12 @@ CONSTITUENT_COLUMNS: Final[tuple[str, ...]] = (
 STRICT_INDICES: Final[tuple[str, ...]] = ("IBOV", "IBXX")
 """Indices whose tickers must all resolve to close H5 (H5.5)."""
 
-FIRST_IBOV_PERIOD: Final[str] = "2003-01"
-"""The first period with a composition from B3 (the retroactive series)."""
+OVERLAP_FROM: Final[str] = "2017-09"
+"""First period of B3's own files, where the liquidity rule is compared with the index."""
 
-
-class UniverseError(Exception):
-    """Base class of every error raised by ``ibexQuant.data.universe``."""
-
-
-class UniverseNotBuiltError(UniverseError, FileNotFoundError):
-    """The universe tables, or the tables they are built from, do not exist yet."""
-
-
-class UniverseBuildError(UniverseError, ValueError):
-    """The raw portfolio files contradict each other or cannot be read."""
+REAL_SOURCES: Final[frozenset[str]] = frozenset(
+    source.value for source in SOURCE_PRIORITY if source is not PortfolioSource.LIQUIDITY_RULE
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,7 +136,19 @@ class UniverseSummary:
     unresolved_strict : list[dict[str, str]]
         Those rows for :data:`STRICT_INDICES`: index, period, ticker.
     ibov_gaps : list[str]
-        Periods from :data:`FIRST_IBOV_PERIOD` without an ``IBOV`` composition.
+        Periods without an ``IBOV`` composition, after the liquidity rule.
+    liquidity_periods : list[str]
+        ``IBOV`` periods filled by the liquidity rule.
+    liquidity_overlap : dict[str, float]
+        Share of each real ``IBOV`` portfolio from :data:`OVERLAP_FROM` that
+        the liquidity rule, with as many members, selects.
+    exits : dict[str, int]
+        Rows of ``index_exits.parquet``, by reason.
+    absent_at_start : dict[str, int]
+        Members without a bar on their period's first session and not in the
+        exits, by index.
+    absent_at_start_strict : list[dict[str, str]]
+        Those members for :data:`STRICT_INDICES`: index, period, ticker.
     outside_calendar : list[str]
         Periods with a composition that the calendar does not cover.
     inputs : dict[str, str | None]
@@ -145,6 +167,11 @@ class UniverseSummary:
     unresolved: dict[str, int]
     unresolved_strict: list[dict[str, str]]
     ibov_gaps: list[str]
+    liquidity_periods: list[str]
+    liquidity_overlap: dict[str, float]
+    exits: dict[str, int]
+    absent_at_start: dict[str, int]
+    absent_at_start_strict: list[dict[str, str]]
     outside_calendar: list[str]
     inputs: dict[str, str | None]
     built_at: str
@@ -153,16 +180,24 @@ class UniverseSummary:
 # --- Build ---
 
 
-def build_universe(store: DataStore, overrides: PeriodOverrides) -> UniverseSummary:
+def build_universe(
+    store: DataStore,
+    overrides: PeriodOverrides,
+    liquidity: LiquiditySettings = IBOV_LIQUIDITY,
+) -> UniverseSummary:
     """
-    Build the periods and the constituents tables and their summary.
+    Build the periods, constituents and exits tables and their summary.
 
     Parameters
     ----------
     store : DataStore
-        The data store, with ``bars_daily`` and the security master built.
+        The data store, with ``bars_daily``, the security master and the
+        corporate actions ledger built.
     overrides : PeriodOverrides
         One-off period starts; ``PeriodOverrides.none()`` for the rule only.
+    liquidity : LiquiditySettings
+        The rule for ``IBOV`` periods without a composition; Ibovespa-like
+        defaults (H5.9).
 
     Returns
     -------
@@ -172,19 +207,23 @@ def build_universe(store: DataStore, overrides: PeriodOverrides) -> UniverseSumm
     Raises
     ------
     UniverseNotBuiltError
-        If there are no bars or no master.
+        If there are no bars or no ledger.
     UniverseBuildError
         If raw files cannot be read (all of them are listed), two files of one
         kind disagree, or an override breaks the calendar.
     SecurityMasterNotBuiltError
         If the master was never built.
     """
-    sessions = _sessions(store)
+    master = SecurityMaster.load(store)
+    traded = read_traded_values(store, master)
     try:
-        periods = index_periods(sessions, overrides)
+        periods = index_periods(traded.calendar, overrides)
     except ValueError as error:
         raise UniverseBuildError(str(error)) from error
-    master = SecurityMaster.load(store)
+    try:
+        events, _ = read_ledger(store)
+    except LedgerNotBuiltError as error:
+        raise UniverseNotBuiltError(str(error)) from error
 
     root = store.raw(*RAW_PARTS)
     inputs: dict[str, str | None] = {}
@@ -220,10 +259,23 @@ def build_universe(store: DataStore, overrides: PeriodOverrides) -> UniverseSumm
 
     members = _deduplicate(pd.concat(candidates, ignore_index=True)) if candidates else None
     kept, superseded = _best_source(members) if members is not None else (_empty(), {})
-    constituents = _resolve(kept, periods, master)
+    real = _resolve(kept, periods, master)
+    filled = _liquidity_fill(real, periods, master, traded, liquidity)
+    constituents = (
+        pd.concat([real, filled], ignore_index=True)
+        .sort_values(["index", "period", "ticker"])
+        .reset_index(drop=True)
+    )
+    exits = find_exits(constituents, periods, last_sessions(master), events)
+    absent = _absent_at_start(constituents, periods, traded, exits)
+    overlap = _overlap(real, periods, traded, liquidity)
 
-    summary = _summary(constituents, periods, superseded, inputs)
-    _write(store, constituents, periods, summary)
+    summary = _summary(constituents, periods, superseded, inputs, exits, absent, overlap)
+    _write(
+        store,
+        {CONSTITUENTS_FILE: constituents, PERIODS_TABLE_FILE: periods, EXITS_FILE: exits},
+        summary,
+    )
     return summary
 
 
@@ -251,18 +303,19 @@ def read_index_periods(store: DataStore) -> pd.DataFrame:
     return _read(store, PERIODS_TABLE_FILE)
 
 
+def read_index_exits(store: DataStore) -> pd.DataFrame:
+    """
+    Read ``curated/b3/index_exits.parquet``.
+
+    Raises
+    ------
+    UniverseNotBuiltError
+        If the universe was never built.
+    """
+    return _read(store, EXITS_FILE)
+
+
 # --- Steps ---
-
-
-def _sessions(store: DataStore) -> pd.DatetimeIndex:
-    folder = store.curated(*BARS_PARTS)
-    paths = sorted(folder.glob(f"year=*/{PARTITION_FILE}")) if folder.is_dir() else []
-    if not paths:
-        raise UniverseNotBuiltError(
-            "No bars_daily partition. Run `ibexquant data ingest cotahist --all` first."
-        )
-    days = [pd.read_parquet(path, columns=["session_date"])["session_date"] for path in paths]
-    return pd.DatetimeIndex(pd.concat(days).unique()).sort_values()
 
 
 def _deduplicate(members: pd.DataFrame) -> pd.DataFrame:
@@ -332,11 +385,120 @@ def _lookup(rows: pd.DataFrame, as_of: pd.Series, spans: pd.DataFrame) -> pd.Ser
     return single.reindex(rows.index).astype("string")
 
 
+def _liquidity_fill(
+    real: pd.DataFrame,
+    periods: pd.DataFrame,
+    master: SecurityMaster,
+    traded: TradedValues,
+    settings: LiquiditySettings,
+) -> pd.DataFrame:
+    """``IBOV`` rows from the liquidity rule for the periods B3 has no portfolio for."""
+    ibov = real[real["index"] == TITLE_SHEET]
+    sizes = ibov.groupby("period")["ticker"].size()
+    labels = periods["period"].astype(str).tolist()
+    position = {label: number for number, label in enumerate(labels)}
+    known = [(position[label], int(size)) for label, size in sizes.items() if label in position]
+    rows: list[pd.DataFrame] = []
+    for number, (label, start) in enumerate(zip(labels, periods["effective_from"], strict=True)):
+        if label in sizes.index or not known:
+            continue
+        # Nearest real portfolio by number of periods; the earlier one on a tie.
+        top = min(known, key=lambda item: (abs(item[0] - number), item[0]))[1]
+        base = base_session(traded.calendar, start)
+        if base is not None and (selected := select_by_liquidity(traded, base, top, settings)):
+            rows.append(_rule_rows(label, base, selected, master))
+    if not rows:
+        return real.iloc[0:0]
+    return pd.concat(rows, ignore_index=True)[list(CONSTITUENT_COLUMNS)].astype(
+        real.dtypes.to_dict()
+    )
+
+
+def _rule_rows(
+    label: str, base: pd.Timestamp, selected: list[str], master: SecurityMaster
+) -> pd.DataFrame:
+    """Rows for securities chosen by the rule, each under its ticker on the base session."""
+    table = master.table
+    spans = table[
+        (table["market_type"] == ROUND_LOT_MARKET)
+        & table["security_id"].astype(str).isin(selected)
+        & (table["first_session"] <= base)
+    ].sort_values(["security_id", "last_session", "ticker"])
+    ticker_of = spans.drop_duplicates("security_id", keep="last").set_index("security_id")[
+        "ticker"
+    ]
+    return pd.DataFrame(
+        {
+            "index": TITLE_SHEET,
+            "period": label,
+            "ticker": [str(ticker_of.get(security, "")) for security in selected],
+            "security_id": selected,
+            "name": "",
+            "share_class": "",
+            "theoretical_quantity": float("nan"),
+            "weight_pct": float("nan"),
+            "base_session": base,
+            "source": PortfolioSource.LIQUIDITY_RULE.value,
+            "source_file": "",
+        }
+    )
+
+
+def _overlap(
+    real: pd.DataFrame,
+    periods: pd.DataFrame,
+    traded: TradedValues,
+    settings: LiquiditySettings,
+) -> dict[str, float]:
+    """Share of each real ``IBOV`` portfolio the rule selects with as many members."""
+    ibov = real[(real["index"] == TITLE_SHEET) & (real["period"] >= OVERLAP_FROM)].merge(
+        periods[["period", "effective_from"]], on="period", how="inner"
+    )
+    shares: dict[str, float] = {}
+    for label, group in ibov.groupby("period", sort=True):
+        base = base_session(traded.calendar, group["effective_from"].iloc[0])
+        size = len(group)
+        if base is not None and (selected := select_by_liquidity(traded, base, size, settings)):
+            members = set(group["security_id"].dropna().astype(str))
+            shares[str(label)] = round(len(members & set(selected)) / size, 4)
+    return shares
+
+
+def _absent_at_start(
+    constituents: pd.DataFrame,
+    periods: pd.DataFrame,
+    traded: TradedValues,
+    exits: pd.DataFrame,
+) -> pd.DataFrame:
+    """Members without a bar on the period's first session that are not exits."""
+    members = constituents.dropna(subset=["security_id"]).merge(
+        periods[["period", "effective_from"]], on="period", how="inner"
+    )
+    table = traded.table
+    starts = table["session_date"].isin(periods["effective_from"])
+    bars = table.loc[starts, ["session_date", "security_id"]].rename(
+        columns={"session_date": "effective_from"}
+    )
+    probe = members.astype({"security_id": "string"}).merge(
+        bars.assign(traded=True), on=["effective_from", "security_id"], how="left"
+    )
+    probe = probe.merge(
+        exits[["index", "period", "security_id"]].assign(exit=True),
+        on=["index", "period", "security_id"],
+        how="left",
+    )
+    missing = probe[probe["traded"].isna() & probe["exit"].isna()]
+    return missing[["index", "period", "ticker"]].reset_index(drop=True)
+
+
 def _summary(
     constituents: pd.DataFrame,
     periods: pd.DataFrame,
     superseded: dict[str, int],
     inputs: dict[str, str | None],
+    exits: pd.DataFrame,
+    absent: pd.DataFrame,
+    overlap: dict[str, float],
 ) -> UniverseSummary:
     labels = periods["period"].astype(str).tolist()
     compositions = constituents[["index", "period", "source"]].drop_duplicates()
@@ -358,8 +520,18 @@ def _summary(
             {"index": str(row.index), "period": str(row.period), "ticker": str(row.ticker)}
             for row in strict.itertuples(index=False)
         ],
-        ibov_gaps=[
-            label for label in labels if label >= FIRST_IBOV_PERIOD and label not in ibov_periods
+        ibov_gaps=[label for label in labels if label not in ibov_periods],
+        liquidity_periods=sorted(
+            compositions.loc[
+                compositions["source"] == PortfolioSource.LIQUIDITY_RULE.value, "period"
+            ].astype(str)
+        ),
+        liquidity_overlap=overlap,
+        exits=_counts(exits["reason"]),
+        absent_at_start=_counts(absent["index"]),
+        absent_at_start_strict=[
+            {"index": str(row.index), "period": str(row.period), "ticker": str(row.ticker)}
+            for row in absent[absent["index"].isin(STRICT_INDICES)].itertuples(index=False)
         ],
         outside_calendar=sorted(set(compositions["period"].astype(str)) - set(labels)),
         inputs=inputs,
@@ -370,12 +542,10 @@ def _summary(
 # --- Storage ---
 
 
-def _write(
-    store: DataStore, constituents: pd.DataFrame, periods: pd.DataFrame, summary: UniverseSummary
-) -> None:
+def _write(store: DataStore, tables: dict[str, pd.DataFrame], summary: UniverseSummary) -> None:
     folder = store.curated(*CURATED_PARTS)
     folder.mkdir(parents=True, exist_ok=True)
-    for name, frame in ((CONSTITUENTS_FILE, constituents), (PERIODS_TABLE_FILE, periods)):
+    for name, frame in tables.items():
         replace_atomically(folder / name, _parquet_writer(frame))
     text = json.dumps({"schema_version": SUMMARY_SCHEMA_VERSION, **asdict(summary)}, indent=2)
     replace_atomically(

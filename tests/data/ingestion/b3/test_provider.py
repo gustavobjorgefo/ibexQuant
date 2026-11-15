@@ -187,5 +187,13 @@ def test_start_after_end(provider: B3Provider) -> None:
 
 
 def test_unknown_field(provider: B3Provider) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="traded_value"):
         provider.get_bars("PETR4", "2024-01-01", "2024-12-31", ["vwap"], adjusted=False)
+
+
+def test_traded_value_is_served_on_request(provider: B3Provider) -> None:
+    bars = provider.get_bars(
+        "PETR4", "2024-01-02", "2024-01-02", ["traded_value", "close"], adjusted=False
+    )
+    assert list(bars.columns) == ["close", "traded_value"]
+    assert bars["traded_value"].iloc[0] == 76_400_000.0
