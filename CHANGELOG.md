@@ -43,6 +43,10 @@
   by period from B3's workbooks and retroactive series, resolved to securities
   (`build_universe`, `read_index_constituents`, `read_index_periods`) (ADR 0015);
   `ibexquant data build universe [--no-overrides]` and `ibexquant data review universe`.
+- `CotahistCalendar`: B3 sessions as recorded in `bars_daily`, read on first use and kept in
+  memory, with `offset` to count sessions back (ADR 0016, H6.8).
+- `B3Provider.get_security_bars`: daily bars by `security_id`, through the same read and
+  adjustment path as `get_bars` (ADR 0016, H6.7).
 - `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
   provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
   `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).

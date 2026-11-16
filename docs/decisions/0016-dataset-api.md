@@ -45,13 +45,13 @@ from ibexQuant.data import B3Dataset
 ds = B3Dataset.open()
 
 panel = ds.panel(
-    universe="IBOV",                 # a Universe, an index code or a list of tickers
+    universe="IBOV",  # a Universe, an index code or a list of tickers
     start="2019-01-01",
     end="2019-12-31",
-    adjustment="total_return",       # "raw" | "splits" | "total_return"
-    anchor=None,                     # defaults to end
-    warmup=252,                      # bars before start, mask False there
-    fields=None,                     # OHLCV by default; "traded_value" on request
+    adjustment="total_return",  # "raw" | "splits" | "total_return"
+    anchor=None,  # defaults to end
+    warmup=252,  # bars before start, mask False there
+    fields=None,  # OHLCV by default; "traded_value" on request
 )
 ```
 
