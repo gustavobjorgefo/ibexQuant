@@ -163,11 +163,68 @@ class B3Provider(MarketDataProvider):
                 raise ValueError(
                     f"More than one round-lot row per session: {pairs.values.tolist()}."
                 )
+        return self._serve(rows, tickers, columns, mode, anchor, first, last)
 
-        for ticker in sorted(set(tickers) - set(rows["label"])):
-            logger.warning("No B3 data for %s from %s to %s", ticker, first.date(), last.date())
+    def get_security_bars(
+        self,
+        security_ids: str | Sequence[str],
+        start: DateLike,
+        end: DateLike,
+        fields: Sequence[str] | None = None,
+        adjusted: bool = True,
+        *,
+        anchor: DateLike | None = None,
+        adjustment: str | None = None,
+    ) -> pd.DataFrame:
+        """
+        Return daily bars by ``security_id`` (ADR 0016, H6.7).
+
+        Same contract as :meth:`get_bars`, with ``security_id`` values in the
+        ``symbol`` level: every round-lot ticker the security carried in the
+        range is served under its ``security_id``, adjusted along the whole
+        chain. Requires the security master.
+
+        Raises
+        ------
+        ValueError
+            As :meth:`get_bars`; also if no requested security has data in the
+            range.
+        """
+        mode = self._resolve_adjustment(adjusted, anchor, adjustment)
+        columns = self._resolve_b3_fields(fields)
+        securities = (
+            [security_ids] if isinstance(security_ids, str) else list(dict.fromkeys(security_ids))
+        )
+        first, last = pd.Timestamp(start).normalize(), pd.Timestamp(end).normalize()
+        if first > last:
+            raise ValueError(f"start ({first.date()}) is after end ({last.date()}).")
+        rows = self._read_labelled({security: security for security in securities}, first, last)
+        return self._serve(rows, securities, columns, mode, anchor, first, last)
+
+    # --- helpers ---
+
+    def _serve(
+        self,
+        rows: pd.DataFrame,
+        requested: list[str],
+        columns: tuple[str, ...],
+        mode: AdjustmentMode | None,
+        anchor: DateLike | None,
+        first: pd.Timestamp,
+        last: pd.Timestamp,
+    ) -> pd.DataFrame:
+        """Adjust labelled raw rows if asked and shape them as provider bars."""
+        missing = sorted(set(requested) - set(rows["label"]))
+        if missing:
+            # One line per request: a long backtest asks for many windows, and listing each
+            # security on its own line buries the warnings that matter.
+            logger.warning(
+                "No B3 data for %s from %s to %s", ", ".join(missing), first.date(), last.date()
+            )
         if rows.empty:
-            raise ValueError(f"No B3 data for {tickers} between {first.date()} and {last.date()}.")
+            raise ValueError(
+                f"No B3 data for {requested} between {first.date()} and {last.date()}."
+            )
         if mode is not None:
             pivot = last if anchor is None else pd.Timestamp(anchor).normalize()
             if pivot < last:
@@ -188,8 +245,6 @@ class B3Provider(MarketDataProvider):
             ),
         )
         return bars.sort_index()
-
-    # --- helpers ---
 
     @staticmethod
     def _resolve_b3_fields(fields: Sequence[str] | None) -> tuple[str, ...]:
@@ -272,13 +327,7 @@ class B3Provider(MarketDataProvider):
         self, tickers: list[str], first: pd.Timestamp, last: pd.Timestamp
     ) -> pd.DataFrame:
         """Read every round-lot listing of each requested ticker's security."""
-        # Imported here: the reference package imports this package's build module,
-        # so a module-level import would be circular.
-        from ibexQuant.data.reference import SecurityMaster
-
-        table = SecurityMaster.load(self._store).table
-        round_lot = table[table["market_type"] == ROUND_LOT_MARKET]
-        label_of: dict[tuple[str, str], str] = {}
+        round_lot = self._round_lot_master()
         security_of: dict[str, str] = {}
         for ticker in tickers:
             own = round_lot[(round_lot["ticker"] == ticker) & (round_lot["first_session"] <= last)]
@@ -290,22 +339,40 @@ class B3Provider(MarketDataProvider):
                     f"{security_of[security]} and {ticker} are the same security ({security})."
                 )
             security_of[security] = ticker
-            members = round_lot[round_lot["security_id"] == security]
-            for member_ticker, isin in zip(members["ticker"], members["isin"], strict=True):
-                label_of[(str(member_ticker), str(isin))] = ticker
+        return self._read_labelled(security_of, first, last)
 
+    def _read_labelled(
+        self, label_of_security: dict[str, str], first: pd.Timestamp, last: pd.Timestamp
+    ) -> pd.DataFrame:
+        """Read every round-lot listing of each security, labelled as asked."""
+        round_lot = self._round_lot_master()
+        members = round_lot[round_lot["security_id"].isin(label_of_security)]
+        label_of: dict[tuple[str, str], str] = {
+            (str(ticker), str(isin)): label_of_security[str(security)]
+            for ticker, isin, security in zip(
+                members["ticker"], members["isin"], members["security_id"], strict=True
+            )
+        }
         wanted = sorted({ticker for ticker, _ in label_of})
         rows = self._read(wanted, first, last)
         keys = list(zip(rows["ticker"].astype(str), rows["isin"].astype(str), strict=True))
         labels = pd.Series([label_of.get(key) for key in keys], index=rows.index, dtype="object")
         rows = rows.assign(
-            label=labels, security_id=labels.map(self._security_by_label(security_of))
+            label=labels, security_id=labels.map(self._security_by_label(label_of_security))
         ).dropna(subset=["label"])
         # A security trading under two tickers on one session (a change of ticker
         # with the same ISIN): the more traded row represents the session.
         rows = rows.sort_values("volume_shares", ascending=False, kind="stable")
         rows = rows.drop_duplicates(subset=["session_date", "label"], keep="first")
         return rows.reset_index(drop=True)
+
+    def _round_lot_master(self) -> pd.DataFrame:
+        # Imported here: the reference package imports this package's build module,
+        # so a module-level import would be circular.
+        from ibexQuant.data.reference import SecurityMaster
+
+        table = SecurityMaster.load(self._store).table
+        return table[table["market_type"] == ROUND_LOT_MARKET]
 
     @staticmethod
     def _security_by_label(security_of: dict[str, str]) -> dict[str, str]:

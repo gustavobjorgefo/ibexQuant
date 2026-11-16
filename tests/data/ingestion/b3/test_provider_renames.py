@@ -10,6 +10,7 @@ odd lot.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -136,3 +137,55 @@ def test_without_a_master(tmp_path: Path) -> None:
     build_bars_daily(store)
     with pytest.raises(SecurityMasterNotBuiltError, match="build security-master"):
         B3Provider(store).get_bars("PETR4", START, END, adjusted=False)
+
+
+# --- bars by security_id (ADR 0016, H6.7) ---
+
+
+def test_security_bars_serve_the_whole_chain_under_the_security_id(store: DataStore) -> None:
+    from ibexQuant.data.reference import SecurityMaster
+
+    security = SecurityMaster.load(store).resolve("BHIA3", "2024-01-08")
+    bars = B3Provider(store).get_security_bars(security, START, END, adjusted=False)
+    assert closes(bars, security) == [10.0, 11.0, 12.0, 13.0, 14.0, 15.0]
+    by_ticker = B3Provider(store).get_bars("BHIA3", START, END, adjusted=False)
+    assert bars.to_numpy().tolist() == by_ticker.to_numpy().tolist()
+
+
+def test_security_bars_take_a_list_and_skip_unknown_ids(
+    store: DataStore, caplog: pytest.LogCaptureFixture
+) -> None:
+    from ibexQuant.data.reference import SecurityMaster
+
+    security = SecurityMaster.load(store).resolve("PETR4", "2024-01-08")
+    bars = B3Provider(store).get_security_bars(
+        [security, "NOPE", security], START, END, ["close"], adjusted=False
+    )
+    assert bars.index.get_level_values("symbol").unique().tolist() == [security]
+    assert list(bars.columns) == ["close"]
+    assert "No B3 data for NOPE" in caplog.text
+
+
+def test_securities_without_data_share_one_warning(
+    store: DataStore, caplog: pytest.LogCaptureFixture
+) -> None:
+    from ibexQuant.data.reference import SecurityMaster
+
+    security = SecurityMaster.load(store).resolve("PETR4", "2024-01-08")
+    with caplog.at_level(logging.WARNING):
+        B3Provider(store).get_security_bars(
+            [security, "NOPE", "GONE"], START, END, ["close"], adjusted=False
+        )
+    missing = [record for record in caplog.records if "No B3 data" in record.getMessage()]
+    assert len(missing) == 1
+    assert "No B3 data for GONE, NOPE" in missing[0].getMessage()
+
+
+def test_security_bars_check_their_arguments(store: DataStore) -> None:
+    provider = B3Provider(store)
+    with pytest.raises(ValueError, match="No B3 data"):
+        provider.get_security_bars("NOPE", START, END, adjusted=False)
+    with pytest.raises(ValueError, match="is after end"):
+        provider.get_security_bars("NOPE", END, START, adjusted=False)
+    with pytest.raises(ValueError, match="adjusted bars only"):
+        provider.get_security_bars("NOPE", START, END, adjusted=False, anchor=END)

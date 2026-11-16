@@ -47,6 +47,7 @@ does, but *why it is not done differently*.
 | 0013 | [Corporate actions ledger](0013-corporate-actions-ledger.md) | Accepted | H3 |
 | 0014 | [Anchored price adjustment](0014-anchored-adjustment.md) | Accepted | H4 |
 | 0015 | [Point-in-time universe](0015-point-in-time-universe.md) | Accepted | H5 |
+| 0016 | [Dataset API](0016-dataset-api.md) | Accepted | H6 |
 
 ## Pending items
 
@@ -66,6 +67,8 @@ resolved; when it is, the resolving record is linked here.
 | P9 | Backtest engine option: execute on raw prices and credit event cash (JCP net of withholding) on the payment date, never combined with adjusted prices (see 0014) | Backtest engine design |
 | P10 | Valuation of holdings that stop trading inside an index period (delisting returns); the exits are recorded in `index_exits.parquet` (see 0015) | Backtest engine design |
 | P11 | Execution and accounting precision: adjusted prices stay at full precision for research; orders and fills use raw prices on B3's tick and lot; cash, fees and P&L in exact cents (see 0015) | Backtest engine design |
+| P12 | Price levels kept across an ex-session (targets, stops, pending orders) are rescaled by the event's factor on the ex-session (see 0016) | Backtest engine design |
+| P13 | Corporate event quality: the ledger build flags share events of opposite direction on one ex-session as a conflict; the jumps still kept raw (1997–2000, DROG3, ELPL4, PCAR4, ENEV3) are reviewed (see 0016) | Before the daily engine's first study |
 
 ## Roadmap
 
@@ -95,7 +98,18 @@ The B3 equities data base that replaces yfinance for long backtests (see
 | H3    | Corporate actions ledger                                      | Done        |
 | H4    | Anchored price adjustment                                     | Done        |
 | H5    | Point-in-time universe                                        | Done        |
-| H6    | `B3Dataset` API                                               | Not started |
+| H6    | `B3Dataset` API                                               | Done        |
+
+### Backtest engines
+
+Simulation on top of the data base (see 0016). The daily engine carries positions across
+sessions and resolves P5, P6 and P9–P12; the day-trade engine is flat at every close.
+
+| Part            | Scope                                                                 | Status      |
+|-----------------|-----------------------------------------------------------------------|-------------|
+| Daily engine    | Positions across sessions, raw execution, event cash, exits           | Not started |
+| Walk-forward    | `WalkForwardSchedule`: training and test windows, anchor per decision | Not started |
+| Day-trade engine| Daily bars: limit orders filled when the low or high strictly crosses the limit, at the limit price; flat at the close | Not started |
 
 ### Research and reporting
 

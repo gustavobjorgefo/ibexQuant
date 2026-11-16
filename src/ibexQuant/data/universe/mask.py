@@ -252,6 +252,8 @@ def universe_mask(
     universe: Universe,
     sessions: pd.DatetimeIndex,
     store: DataStore | None = None,
+    *,
+    data: UniverseData | None = None,
 ) -> pd.DataFrame:
     """
     Return the membership of ``universe`` at each session.
@@ -264,6 +266,9 @@ def universe_mask(
         Sessions to evaluate, in the order wanted.
     store : DataStore, optional
         Defaults to the configured data root (``DataStore.open()``).
+    data : UniverseData, optional
+        Tables already read, to share between calls (``B3Dataset`` does);
+        ``store`` is not used when given.
 
     Returns
     -------
@@ -280,8 +285,8 @@ def universe_mask(
     --------
     >>> mask = universe_mask(Index("IBXX") - Index("IBOV"), sessions)  # doctest: +SKIP
     """
-    data = UniverseData(store or DataStore.open())
-    result = universe.mask(data, sessions)
+    tables = data if data is not None else UniverseData(store or DataStore.open())
+    result = universe.mask(tables, sessions)
     result = result.loc[:, result.any(axis=0)]
     result = result.reindex(columns=sorted(result.columns)).astype(bool)
     result.index.name = SESSION_AXIS

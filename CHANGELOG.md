@@ -43,6 +43,18 @@
   by period from B3's workbooks and retroactive series, resolved to securities
   (`build_universe`, `read_index_constituents`, `read_index_periods`) (ADR 0015);
   `ibexquant data build universe [--no-overrides]` and `ibexquant data review universe`.
+- `B3Dataset` (`from ibexQuant.data import B3Dataset`): `panel(universe, start, end,
+  adjustment, anchor, warmup, fields)` builds a `Panel` with `security_id` columns, B3
+  sessions and the point-in-time mask; lookups `constituents`, `rebalance_dates`, `events`,
+  `exits`; tickers for people with `ticker_at`, `ticker_history` and `label` (ADR 0016).
+- `universe_mask(..., data=...)` reuses tables already read.
+- Notebook `research/backtests/0002_ibov_point_in_time.ipynb`: equal-weight IBOV,
+  point-in-time against today's members and BOVA11; survivorship gap of 9.2% a year on B3
+  from 2003 (ADR 0016, H6.10).
+- `CotahistCalendar`: B3 sessions as recorded in `bars_daily`, read on first use and kept in
+  memory, with `offset` to count sessions back (ADR 0016, H6.8).
+- `B3Provider.get_security_bars`: daily bars by `security_id`, through the same read and
+  adjustment path as `get_bars` (ADR 0016, H6.7).
 - `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
   provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
   `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).
@@ -58,5 +70,10 @@
   retroactive Ibovespa CSV (`read_workbook`, `read_retroactive`); `openpyxl` joins the `b3`
   extra.
 
+### Changed
+- `B3Provider` logs the requested symbols without data in a range as one warning per
+  request instead of one per symbol.
+
 ### Fixed
+- The corporate actions build no longer fails on a base without ex-sessions.
 - B3 cash history counted once when two codes of one chain (`ITAU`, `ITUB`) return it.

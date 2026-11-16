@@ -132,6 +132,13 @@ def test_traded_value_is_served_raw_beside_adjusted_prices(built: DataStore) -> 
     assert raw["traded_value"].iloc[0] == 1000 * 10.0
 
 
+def test_security_bars_are_adjusted_like_ticker_bars(built: DataStore) -> None:
+    by_ticker = B3Provider(built).get_bars("PETR3", START, END)
+    by_security = B3Provider(built).get_security_bars(PETR, START, END)
+    assert by_security.index.get_level_values("symbol").unique().tolist() == [PETR]
+    assert by_security.to_numpy().tolist() == by_ticker.to_numpy().tolist()
+
+
 def test_splits_mode_and_an_anchor_after_end(built: DataStore) -> None:
     bars = B3Provider(built).get_bars(
         "PETR3", START, "2024-04-25", anchor="2024-04-29", adjustment="splits"

@@ -641,7 +641,8 @@ def _counts(values: pd.Series) -> dict[str, int]:
 def _unexplained_by_year(ex: pd.DataFrame) -> dict[str, dict[str, int]]:
     out: dict[str, dict[str, int]] = {}
     for status in (ExSessionStatus.UNEXPLAINED, ExSessionStatus.UNEXPLAINED_JUMP):
-        years = ex.loc[ex["status"] == status, "session_date"].dt.year
+        # to_datetime: a ledger without ex-sessions has an untyped, empty column.
+        years = pd.to_datetime(ex.loc[ex["status"] == status, "session_date"]).dt.year
         out[status] = {
             str(year): int(count) for year, count in years.value_counts().sort_index().items()
         }

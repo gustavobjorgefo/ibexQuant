@@ -113,7 +113,7 @@ def test_traded_values_are_read_from_the_bars(tmp_path: Path) -> None:
     table = values.table
     assert tuple(table.columns) == TRADED_COLUMNS
     assert table["session_date"].is_monotonic_increasing
-    assert "BRPETRF" not in set(table["security_id"])  # odd lot left out
+    assert "BRALIEN" not in set(table["security_id"])  # unknown ISIN left out
     day = table[table["session_date"] == DAY("2024-05-02")].set_index("security_id")
     assert day.loc["BRPETR", "traded_value"] == 100e6
     assert not day.loc["BRFUND", "eligible"]
