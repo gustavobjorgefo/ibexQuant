@@ -1,6 +1,6 @@
 # 0015 — Point-in-time universe
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-15
 - Phase: H5
 
@@ -161,5 +161,19 @@ equivalent of `yfinance.download`.
 - New pending item **P10**: valuation of holdings that stop trading inside a period
   (delisting returns). Resolve in: backtest engine design.
 - Closing criteria: `IBOV` and `IBXX` resolve every ticker; every period from 2003 has a
-  composition with its source; members traded on the period's first session or are in the
-  exits table; the liquidity rule's overlap with the real IBOV is reported.
+  composition with its source; members of B3's own portfolios traded on the period's first
+  session or are in the exits table (the rule's picks are reported, not required: a share
+  with 95% presence may miss one session); the liquidity rule's overlap with the real IBOV
+  is reported.
+- Result of the first full build (2026-11-16): 97 periods (1994-09 to 2026-09); 34
+  definitive, 688 third-preview, 36 second-preview, 34 retroactive and 32 liquidity-rule
+  compositions over 40 indices; every `IBOV` and `IBXX` ticker resolved (6 unresolved in
+  `BDRX`, `IGCX`, `IGNM`, `ITAG`); only 1994-09 to 1995-05 lack an `IBOV` composition (no
+  twelve months of history). The rule selects 94.6% of the real `IBOV` on average, 91.8% at
+  worst, over the 28 portfolios from 2017-09. Exits: 698 (69 conversions, 34 redemptions,
+  595 without a ledger event, mostly delistings and tender offers). No member of a real
+  `IBOV` portfolio is absent on its first session; six rule picks of 1996–1999 are.
+- New pending item **P11**: execution and accounting precision. Adjusted prices are
+  synthetic and kept at full float64 precision for research and signals; orders and fills
+  use raw prices rounded to B3's tick and lot, and cash, fees and P&L are kept in exact
+  cents. Resolve in: backtest engine design.
