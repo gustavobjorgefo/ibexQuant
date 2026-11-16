@@ -67,6 +67,7 @@ resolved; when it is, the resolving record is linked here.
 | P9 | Backtest engine option: execute on raw prices and credit event cash (JCP net of withholding) on the payment date, never combined with adjusted prices (see 0014) | Backtest engine design |
 | P10 | Valuation of holdings that stop trading inside an index period (delisting returns); the exits are recorded in `index_exits.parquet` (see 0015) | Backtest engine design |
 | P11 | Execution and accounting precision: adjusted prices stay at full precision for research; orders and fills use raw prices on B3's tick and lot; cash, fees and P&L in exact cents (see 0015) | Backtest engine design |
+| P12 | Price levels kept across an ex-session (targets, stops, pending orders) are rescaled by the event's factor on the ex-session (see 0016) | Backtest engine design |
 
 ## Roadmap
 
@@ -97,6 +98,17 @@ The B3 equities data base that replaces yfinance for long backtests (see
 | H4    | Anchored price adjustment                                     | Done        |
 | H5    | Point-in-time universe                                        | Done        |
 | H6    | `B3Dataset` API                                               | Not started |
+
+### Backtest engines
+
+Simulation on top of the data base (see 0016). The daily engine carries positions across
+sessions and resolves P5, P6 and P9–P12; the day-trade engine is flat at every close.
+
+| Part            | Scope                                                                 | Status      |
+|-----------------|-----------------------------------------------------------------------|-------------|
+| Daily engine    | Positions across sessions, raw execution, event cash, exits           | Not started |
+| Walk-forward    | `WalkForwardSchedule`: training and test windows, anchor per decision | Not started |
+| Day-trade engine| Daily bars: limit orders filled when the low or high strictly crosses the limit, at the limit price; flat at the close | Not started |
 
 ### Research and reporting
 

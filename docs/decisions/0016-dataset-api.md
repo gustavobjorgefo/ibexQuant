@@ -98,6 +98,13 @@ provider. A strategy decides on adjusted prices and orders at raw prices: the ba
 engine asks for a second, `"raw"` panel for execution (P9, P11). The two never share a
 `Panel`, so a field can never be read with the wrong meaning.
 
+A price level a strategy derives from the decision panel (a target, a stop, a limit) is
+already a raw price: at the anchor, adjusted equals raw, and every older bar is expressed in
+the anchor's money. It needs only rounding to the tick (P11). A level that stays alive past
+an ex-session (an open position's target or stop, or an order placed after the close of the
+last cum session for the ex-session) is rescaled by that event's factor, `level × f`, known
+in advance from the ledger; that is the engine's job (P12).
+
 ### H6.6 Which securities
 
 Every `security_id` that is a member on at least one session of `[start, end]` gets a
@@ -115,9 +122,12 @@ path; `get_bars` keeps its contract.
 
 A new `CotahistCalendar(store)` implements `TradingCalendar` with the sessions of
 `bars_daily`: the days B3 traded, the same calendar the index periods use. The panel is
-aligned to it, so a missing bar inside the range is a real gap, never a holiday. It covers
-sessions up to the last ingestion only; projecting future sessions (for the live engine)
-is not its job. `PandasMarketCalendarsCalendar` stays for other markets and the yfinance
+aligned to it, so a missing bar inside the range is a real gap, never a holiday. The
+sessions are read from the partitions on first use (only the `session_date` column) and kept
+in memory for the life of the object: no file to maintain, never stale after an ingestion.
+If reading ever becomes a cost (the live engine), an `ingest cotahist` output can replace it
+behind the same class. It covers sessions up to the last ingestion only; projecting future
+sessions (for the live engine) is not its job. `PandasMarketCalendarsCalendar` stays for other markets and the yfinance
 path.
 
 ### H6.9 Lookups
@@ -164,6 +174,12 @@ is the sketch the walk-forward schedule will formalize.
   never shown to a person as is.
 - P5 is resolved on the data side; the runner's choice of `warmup` stays with the backtest
   engine design.
+- New pending item **P12**: price levels kept across an ex-session (targets, stops, pending
+  orders) are rescaled by the event's factor on the ex-session. Resolve in: backtest engine
+  design.
+- A day-trade engine on daily bars needs none of P9, P10 or P12 for its positions (always
+  flat at the close), but its features still read the adjusted decision panel, and limit
+  orders placed for an ex-session are rescaled as in H6.5. It is a separate engine (roadmap).
 - Closing criteria: `ds.panel` reproduces `B3Provider.get_bars` for a ticker list (same
   numbers, `security_id` columns); end-to-end tests on a synthetic base with a rename, a
   split, a dividend, an exit and two periods; notebook 0002 runs end to end with one
