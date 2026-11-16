@@ -38,6 +38,25 @@
 - `B3Provider.get_bars` serves adjusted bars by default (`total_return` or `splits`, `anchor`
   defaulting to `end`) and warns about unexplained jumps in the range.
 - `corporate_actions.yaml`: `value_fraction` for spin-offs whose target never trades.
+- `ibexQuant.data.universe`: index periods from the B3 calendar and three rule versions
+  (`index_periods`, `assign_periods`, `index_periods.yaml` overrides) and index compositions
+  by period from B3's workbooks and retroactive series, resolved to securities
+  (`build_universe`, `read_index_constituents`, `read_index_periods`) (ADR 0015);
+  `ibexquant data build universe [--no-overrides]` and `ibexquant data review universe`.
+- `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
+  provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
+  `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).
+- Universe mask (ADR 0015): `Index`, `Tickers` and `LiquidityRule` specifications,
+  combined with `|`, `&` and `-`, and `universe_mask` (sessions × `security_id`). IBOV
+  periods without a B3 portfolio take the liquidity rule (`liquidity_rule` source); the
+  rule's overlap with the real index, members that stop trading inside a period
+  (`index_exits.parquet`, `read_index_exits`) and members absent on a period's first
+  session are reported by `ibexquant data build universe`.
+- `B3Provider.get_bars(..., fields=[..., "traded_value"])`: raw traded value in BRL,
+  never adjusted.
+- `ibexQuant.data.ingestion.b3`: readers of B3's index portfolio workbooks and of the
+  retroactive Ibovespa CSV (`read_workbook`, `read_retroactive`); `openpyxl` joins the `b3`
+  extra.
 
 ### Fixed
 - B3 cash history counted once when two codes of one chain (`ITAU`, `ITUB`) return it.

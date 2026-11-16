@@ -46,6 +46,7 @@ does, but *why it is not done differently*.
 | 0012 | [Security master](0012-security-master.md) | Accepted | H2 |
 | 0013 | [Corporate actions ledger](0013-corporate-actions-ledger.md) | Accepted | H3 |
 | 0014 | [Anchored price adjustment](0014-anchored-adjustment.md) | Accepted | H4 |
+| 0015 | [Point-in-time universe](0015-point-in-time-universe.md) | Accepted | H5 |
 
 ## Pending items
 
@@ -56,13 +57,15 @@ resolved; when it is, the resolving record is linked here.
 |----|---------------------------------------------------------------------|-----------------------|
 | P1 | Timestamp convention for the live engine, compatible with `Panel` (see 0002) | Live engine design |
 | P2 | `SessionsSinceLastObservation` node, exposing absence to the model (see 0003) | Phase 2 |
-| P3 | Universe module: Ibovespa composition by effective date and point-in-time liquidity filter (see 0004) | H5 (see 0010) |
+| P3 | Universe module: Ibovespa composition by effective date and point-in-time liquidity filter (see 0004) | Resolved in H5: [0015](0015-point-in-time-universe.md) |
 | P4 | Unadjusted prices in `Panel` for features that are not scale invariant (see 0005) | Raw prices available through `B3Provider` (0011); adjusted alongside raw in H4 |
 | P5 | Backtest runner loads data from `lookback` sessions before the backtest start, using `FeatureSet.lookback` and the trading calendar (see 0008) | Backtest engine design |
 | P6 | Backtest engine produces the trades table (`entry_time`, `exit_time`, result per trade) and positions, enabling exposure and turnover metrics from holdings (see 0009) | Backtest engine design |
 | P7 | `analytics/inference.py`: normality, significance of the mean, Probabilistic Sharpe Ratio; scipy as an optional `stats` extra (see 0009) | After plotting |
 | P8 | Deflated Sharpe Ratio and multiple-testing corrections, which need the number of strategies tried (see 0009) | Phase 5 |
 | P9 | Backtest engine option: execute on raw prices and credit event cash (JCP net of withholding) on the payment date, never combined with adjusted prices (see 0014) | Backtest engine design |
+| P10 | Valuation of holdings that stop trading inside an index period (delisting returns); the exits are recorded in `index_exits.parquet` (see 0015) | Backtest engine design |
+| P11 | Execution and accounting precision: adjusted prices stay at full precision for research; orders and fills use raw prices on B3's tick and lot; cash, fees and P&L in exact cents (see 0015) | Backtest engine design |
 
 ## Roadmap
 
@@ -91,7 +94,7 @@ The B3 equities data base that replaces yfinance for long backtests (see
 | H2    | Security master: permanent identifiers across ticker changes  | Done        |
 | H3    | Corporate actions ledger                                      | Done        |
 | H4    | Anchored price adjustment                                     | Done        |
-| H5    | Point-in-time universe                                        | Not started |
+| H5    | Point-in-time universe                                        | Done        |
 | H6    | `B3Dataset` API                                               | Not started |
 
 ### Research and reporting

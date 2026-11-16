@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Final
 import pandas as pd
 
 from ibexQuant.data.ingestion.b3.bars_daily import CURATED_PARTS, PARTITION_FILE
-from ibexQuant.data.ingestion.provider import DateLike, MarketDataProvider
+from ibexQuant.data.ingestion.provider import OHLCV_FIELDS, DateLike, MarketDataProvider
 from ibexQuant.data.store import DataStore
 
 if TYPE_CHECKING:
@@ -62,7 +62,11 @@ _SOURCE_COLUMNS: Final[dict[str, str]] = {
     "low": "low",
     "close": "close",
     "volume": "volume_shares",
+    "traded_value": "traded_value_brl",
 }
+TRADED_VALUE_FIELD: Final[str] = "traded_value"
+B3_FIELDS: Final[tuple[str, ...]] = (*OHLCV_FIELDS, TRADED_VALUE_FIELD)
+"""Fields the B3 provider serves: OHLCV and, on request, the raw traded value in BRL."""
 
 
 class B3Provider(MarketDataProvider):
@@ -115,6 +119,10 @@ class B3Provider(MarketDataProvider):
 
         Parameters
         ----------
+        fields : sequence of str, optional
+            Subset of :data:`B3_FIELDS`; defaults to the five OHLCV fields.
+            ``traded_value`` (BRL) is never adjusted: money traded is money
+            traded (ADR 0015, H5.9).
         anchor : str or pandas.Timestamp, optional
             Date the adjusted prices are relative to: bars on and after it are
             raw (ADR 0014, H4.4). Defaults to ``end``; may not precede it.
@@ -139,7 +147,7 @@ class B3Provider(MarketDataProvider):
             With ``adjusted``, if the ledger changed after the factors were built.
         """
         mode = self._resolve_adjustment(adjusted, anchor, adjustment)
-        columns = self._resolve_fields(fields)
+        columns = self._resolve_b3_fields(fields)
         tickers = [symbols] if isinstance(symbols, str) else list(dict.fromkeys(symbols))
         first, last = pd.Timestamp(start).normalize(), pd.Timestamp(end).normalize()
         if first > last:
@@ -182,6 +190,16 @@ class B3Provider(MarketDataProvider):
         return bars.sort_index()
 
     # --- helpers ---
+
+    @staticmethod
+    def _resolve_b3_fields(fields: Sequence[str] | None) -> tuple[str, ...]:
+        """The requested fields in :data:`B3_FIELDS` order; OHLCV when none are given."""
+        if fields is None:
+            return OHLCV_FIELDS
+        unknown = sorted(set(fields) - set(B3_FIELDS))
+        if unknown:
+            raise ValueError(f"Unknown field(s) {unknown}. Valid fields are {B3_FIELDS}.")
+        return tuple(name for name in B3_FIELDS if name in fields)
 
     @staticmethod
     def _resolve_adjustment(

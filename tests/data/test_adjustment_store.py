@@ -124,6 +124,14 @@ def test_adjusted_bars_are_total_return_at_the_end_by_default(built: DataStore) 
     assert bars["volume"].iloc[0] == 1000 * 2 * 10
 
 
+def test_traded_value_is_served_raw_beside_adjusted_prices(built: DataStore) -> None:
+    raw = B3Provider(built).get_bars("PETR3", START, END, ["traded_value"], adjusted=False)
+    bars = B3Provider(built).get_bars("PETR3", START, END, ["close", "traded_value"])
+    assert list(bars.columns) == ["close", "traded_value"]
+    assert bars["traded_value"].tolist() == raw["traded_value"].tolist()
+    assert raw["traded_value"].iloc[0] == 1000 * 10.0
+
+
 def test_splits_mode_and_an_anchor_after_end(built: DataStore) -> None:
     bars = B3Provider(built).get_bars(
         "PETR3", START, "2024-04-25", anchor="2024-04-29", adjustment="splits"

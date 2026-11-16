@@ -50,6 +50,7 @@ def bars_rows(
             "low": min(open_, close),
             "close": close,
             "volume_shares": 1000,
+            "traded_value_brl": 1000 * close,
         }
         for day, number, open_, close in sessions
     ]

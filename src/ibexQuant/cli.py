@@ -29,6 +29,12 @@ Commands
 ``ibexquant data build adjustment-factors``
     Compute one adjustment factor per ex-session of the ledger into
     ``derived/b3`` (ADR 0014).
+``ibexquant data build universe [--no-overrides]``
+    Build the index periods from the B3 calendar and the index compositions
+    from B3's portfolio files, resolved to securities (ADR 0015).
+``ibexquant data review universe [--index INDEX ...]``
+    Print the index members whose ticker did not resolve to a security (by
+    default those of IBOV and IBXX).
 ``ibexquant data review events [--status STATUS ...] [--yaml]``
     Print the ex-sessions waiting for review (by default inferred splits and
     unexplained jumps) with the prices around them, or, with ``--yaml``,
@@ -327,6 +333,83 @@ def _data_build_adjustment_factors(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _data_build_universe(args: argparse.Namespace) -> int:
+    """Build the periods and the constituents and print their summary."""
+    from ibexQuant.data.reference import OverridesFormatError, SecurityMasterError
+    from ibexQuant.data.store import resolve_overrides_root
+    from ibexQuant.data.universe import (
+        PeriodOverrides,
+        UniverseError,
+        build_universe,
+        load_period_overrides,
+    )
+
+    try:
+        overrides = (
+            PeriodOverrides.none()
+            if args.no_overrides
+            else load_period_overrides(resolve_overrides_root())
+        )
+        summary = build_universe(DataStore.open(), overrides)
+    except (OverridesFormatError, SecurityMasterError, UniverseError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+
+    def counts(values: dict[str, int]) -> str:
+        return ", ".join(f"{key} {count}" for key, count in values.items()) or "none"
+
+    print(f"periods: {summary.periods} ({summary.first_period} to {summary.last_period})")
+    print(f"compositions by source: {counts(summary.compositions)}")
+    print(f"set aside for a better source: {counts(summary.superseded)}")
+    print(f"rows: {summary.rows}, indices: {summary.indices}")
+    print(f"unresolved tickers by index: {counts(summary.unresolved)}")
+    for row in summary.unresolved_strict:
+        print(f"  {row['index']} {row['period']} {row['ticker']}")
+    print(f"IBOV periods from the liquidity rule: {len(summary.liquidity_periods)}")
+    print(f"IBOV periods without composition: {len(summary.ibov_gaps)}", end="")
+    print(f" ({', '.join(summary.ibov_gaps)})" if summary.ibov_gaps else "")
+    if summary.liquidity_overlap:
+        shares = list(summary.liquidity_overlap.values())
+        print(
+            f"liquidity rule vs real IBOV: mean overlap {sum(shares) / len(shares):.1%}, "
+            f"lowest {min(shares):.1%} over {len(shares)} portfolios"
+        )
+    print(f"exits inside a period: {counts(summary.exits)}")
+    print(f"members absent on the first session: {counts(summary.absent_at_start)}")
+    for row in summary.absent_at_start_strict:
+        print(f"  {row['index']} {row['period']} {row['ticker']}")
+    if summary.outside_calendar:
+        print(f"compositions outside the calendar: {', '.join(summary.outside_calendar)}")
+    if summary.inputs["index_periods.yaml"] is None:
+        print("built without index_periods.yaml")
+    return EXIT_OK
+
+
+def _data_review_universe(args: argparse.Namespace) -> int:
+    """Print the members without a security, for the chosen indices."""
+    import pandas as pd
+
+    from ibexQuant.data.universe import UniverseError, read_index_constituents
+    from ibexQuant.data.universe.constituents import STRICT_INDICES
+
+    try:
+        constituents = read_index_constituents(DataStore.open())
+    except UniverseError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    indices = args.index or list(STRICT_INDICES)
+    shown = constituents[constituents["security_id"].isna() & constituents["index"].isin(indices)][
+        ["index", "period", "ticker", "name", "share_class", "base_session", "source_file"]
+    ]
+    if shown.empty:
+        print(f"Every ticker of {', '.join(indices)} resolves.")
+        return EXIT_OK
+    with pd.option_context("display.max_rows", None, "display.width", 200):
+        print(shown.to_string(index=False))
+    print(f"\n{len(shown)} unresolved ticker(s).")
+    return EXIT_OK
+
+
 def _data_review_events(args: argparse.Namespace) -> int:
     """Print the ex-sessions to review, as a table or as override entries to edit."""
     import pandas as pd
@@ -448,6 +531,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "adjustment-factors", help="Price adjustment factors from the ledger."
     )
     factors.set_defaults(handler=_data_build_adjustment_factors)
+    universe = targets.add_parser("universe", help="Index periods and compositions.")
+    universe.add_argument(
+        "--no-overrides",
+        action="store_true",
+        help="Build without index_periods.yaml (rule dates only).",
+    )
+    universe.set_defaults(handler=_data_build_universe)
 
     review = data_commands.add_parser("review", help="Review decisions waiting for a human.")
     subjects = review.add_subparsers(dest="subject", required=True, metavar="SUBJECT")
@@ -477,5 +567,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Print corporate_actions.yaml entries instead of a table.",
     )
     review_events.set_defaults(handler=_data_review_events)
+    review_universe = subjects.add_parser(
+        "universe", help="Index members whose ticker did not resolve."
+    )
+    review_universe.add_argument(
+        "--index",
+        action="append",
+        help="Only this index (repeatable; default: IBOV and IBXX).",
+    )
+    review_universe.set_defaults(handler=_data_review_universe)
 
     return parser
