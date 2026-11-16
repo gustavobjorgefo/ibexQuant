@@ -43,6 +43,9 @@
   by period from B3's workbooks and retroactive series, resolved to securities
   (`build_universe`, `read_index_constituents`, `read_index_periods`) (ADR 0015);
   `ibexquant data build universe [--no-overrides]` and `ibexquant data review universe`.
+- `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
+  provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
+  `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).
 - Universe mask (ADR 0015): `Index`, `Tickers` and `LiquidityRule` specifications,
   combined with `|`, `&` and `-`, and `universe_mask` (sessions × `security_id`). IBOV
   periods without a B3 portfolio take the liquidity rule (`liquidity_rule` source); the
