@@ -27,7 +27,7 @@ def span(
     return {
         "security_id": security_id,
         "ticker": ticker,
-        "isin": security_id if market_type == 10 else f"{security_id}F",
+        "isin": f"{security_id}ACNOR{0 if market_type == 10 else 9}",
         "market_type": market_type,
         "first_session": DAY(first),
         "last_session": DAY(last),
@@ -67,6 +67,7 @@ TRADING: dict[str, tuple[float, str]] = {
     "BRPAUS": (10.0, "ON      NM"),
     "BRFUND": (500.0, "CI"),
 }
+SPLIT_DAY = "2024-07-01"
 # Sessions a security did not trade although listed.
 PAUSES: dict[str, list[str]] = {"BRPAUS": ["2024-09-02"]}
 
@@ -85,6 +86,9 @@ def bars() -> pd.DataFrame:
         for day in pd.bdate_range(entry["first_session"], entry["last_session"]):
             if day in paused:
                 continue
+            # PETR splits 2 for 1 on SPLIT_DAY: half the price, a new distribution number.
+            after_split = entry["security_id"] == "BRPETR" and day >= DAY(SPLIT_DAY)
+            price = 10.0 if after_split else 20.0
             rows.append(
                 {
                     "session_date": day,
@@ -92,6 +96,12 @@ def bars() -> pd.DataFrame:
                     "isin": entry["isin"],
                     "market_type": 10,
                     "specification": specification,
+                    "distribution_number": 2 if after_split else 1,
+                    "open": price,
+                    "high": price,
+                    "low": price,
+                    "close": price,
+                    "volume_shares": 1000.0,
                     "traded_value_brl": value * 1e6,
                 }
             )
@@ -100,9 +110,15 @@ def bars() -> pd.DataFrame:
         {
             "session_date": DAY("2024-05-02"),
             "ticker": "PETR4F",
-            "isin": "BRPETRF",
+            "isin": "BRPETRACNOR9",
             "market_type": 20,
             "specification": "PN      N2",
+            "distribution_number": 1,
+            "open": 20.0,
+            "high": 20.0,
+            "low": 20.0,
+            "close": 20.0,
+            "volume_shares": 1.0,
             "traded_value_brl": 1e12,
         }
     )
@@ -113,6 +129,12 @@ def bars() -> pd.DataFrame:
             "isin": "BRALIEN",
             "market_type": 10,
             "specification": "ON",
+            "distribution_number": 1,
+            "open": 20.0,
+            "high": 20.0,
+            "low": 20.0,
+            "close": 20.0,
+            "volume_shares": 1.0,
             "traded_value_brl": 1e12,
         }
     )

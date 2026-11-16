@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from support.ledger import DAY, PETR, PETR_CNPJ, VALE, ledger_store
+from support.ledger import DAY, PETR, PETR_CNPJ, VALE, bars_rows, ledger_store, master_row
 
 from ibexQuant.data.reference.corporate_action_overrides import (
     ActionOverrides,
@@ -115,6 +115,20 @@ def test_a_build_without_sources_lists_the_skeleton(store: DataStore) -> None:
     assert summary.events["source"] == {"inferred": 2}
     assert summary.ex_sessions == {"inferred": 2, "unexplained": 3, "unexplained_jump": 1}
     assert table(store, CONFLICTS_FILE).empty
+
+
+def test_a_base_without_ex_sessions_builds_an_empty_ledger(tmp_path: Path) -> None:
+    store = DataStore.initialize(tmp_path / "data")
+    bars = pd.DataFrame(bars_rows(VALE, "VALE3", [("2024-04-22", 1, 60.0, 60.0)]))
+    partition = store.curated("b3", "bars_daily", "year=2024", "part-0.parquet")
+    partition.parent.mkdir(parents=True)
+    bars.to_parquet(partition, index=False)
+    pd.DataFrame([master_row(VALE, "VALE3")]).to_parquet(
+        store.curated("b3", "security_master.parquet"), index=False
+    )
+    summary = build_corporate_actions(store, ActionOverrides.none())
+    assert summary.ex_sessions == {}
+    assert summary.unexplained_by_year == {"unexplained": {}, "unexplained_jump": {}}
 
 
 def test_no_bars_is_an_error(tmp_path: Path) -> None:

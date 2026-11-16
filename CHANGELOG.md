@@ -43,6 +43,11 @@
   by period from B3's workbooks and retroactive series, resolved to securities
   (`build_universe`, `read_index_constituents`, `read_index_periods`) (ADR 0015);
   `ibexquant data build universe [--no-overrides]` and `ibexquant data review universe`.
+- `B3Dataset` (`from ibexQuant.data import B3Dataset`): `panel(universe, start, end,
+  adjustment, anchor, warmup, fields)` builds a `Panel` with `security_id` columns, B3
+  sessions and the point-in-time mask; lookups `constituents`, `rebalance_dates`, `events`,
+  `exits`; tickers for people with `ticker_at`, `ticker_history` and `label` (ADR 0016).
+- `universe_mask(..., data=...)` reuses tables already read.
 - `CotahistCalendar`: B3 sessions as recorded in `bars_daily`, read on first use and kept in
   memory, with `offset` to count sessions back (ADR 0016, H6.8).
 - `B3Provider.get_security_bars`: daily bars by `security_id`, through the same read and
@@ -63,4 +68,5 @@
   extra.
 
 ### Fixed
+- The corporate actions build no longer fails on a base without ex-sessions.
 - B3 cash history counted once when two codes of one chain (`ITAU`, `ITUB`) return it.
