@@ -10,6 +10,7 @@ odd lot.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -163,6 +164,21 @@ def test_security_bars_take_a_list_and_skip_unknown_ids(
     assert bars.index.get_level_values("symbol").unique().tolist() == [security]
     assert list(bars.columns) == ["close"]
     assert "No B3 data for NOPE" in caplog.text
+
+
+def test_securities_without_data_share_one_warning(
+    store: DataStore, caplog: pytest.LogCaptureFixture
+) -> None:
+    from ibexQuant.data.reference import SecurityMaster
+
+    security = SecurityMaster.load(store).resolve("PETR4", "2024-01-08")
+    with caplog.at_level(logging.WARNING):
+        B3Provider(store).get_security_bars(
+            [security, "NOPE", "GONE"], START, END, ["close"], adjusted=False
+        )
+    missing = [record for record in caplog.records if "No B3 data" in record.getMessage()]
+    assert len(missing) == 1
+    assert "No B3 data for GONE, NOPE" in missing[0].getMessage()
 
 
 def test_security_bars_check_their_arguments(store: DataStore) -> None:

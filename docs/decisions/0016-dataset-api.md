@@ -1,6 +1,6 @@
 # 0016 — Dataset API
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-16
 - Phase: H6
 
@@ -182,5 +182,24 @@ is the sketch the walk-forward schedule will formalize.
   orders placed for an ex-session are rescaled as in H6.5. It is a separate engine (roadmap).
 - Closing criteria: `ds.panel` reproduces `B3Provider.get_bars` for a ticker list (same
   numbers, `security_id` columns); end-to-end tests on a synthetic base with a rename, a
-  split, a dividend, an exit and two periods; notebook 0002 runs end to end with one
-  `ds.panel` call per period and reports the survivorship gap.
+  split, an exit and two periods (cash adjustment goes through the same provider path and
+  is covered by the H4 tests); notebook 0002 runs end to end with one `ds.panel` call per
+  period and reports the survivorship gap.
+- Result of notebook 0002 (2026-11-17, 2003-01-02 to 2026-11-06, 72 periods, 144 panels in
+  about 30 s): equal weight, CAGR 10.9% point-in-time against 20.1% for today's members over
+  the whole past, a survivorship gap of 9.2% a year (6.7 times the final value). From
+  BOVA11's listing the point-in-time line returns 8.6% a year against 9.2% for BOVA11
+  (correlation 0.94, tracking error 8.4%); the survivors line shows an information ratio of
+  0.73 that does not exist.
+- The first runs were wrong, and the notebook found why: 21 corporate events of 2004–2010
+  (Bradesco and Eletrobras groupings, Gerdau bonuses, Vivo group, VCP, NET, Perdigão, the
+  LLX spin-off) were missing from the ledger, whose manual review had covered ex-sessions
+  from 2010 on; and an OGX split of 2009 was applied twice, because the 2011 reference form
+  calls it a grouping and the 2012 form a split, both with ratio 100. Both were fixed in
+  `corporate_actions.yaml` (events and the first `rejections` entry).
+- New pending item **P13**: corporate event quality. The ledger build flags share events
+  of opposite direction on one ex-session as a conflict instead of applying both; the jumps
+  still kept raw are reviewed (1997–2000: WHM3, USI4, ELE6, TMGR6, TERJ4, LIPR3, INEP4,
+  CESP3/4, TEPR4; DROG3 2007-06-14, ELPL4 2010-12-21, PCAR4 2011-04-01, ENEV3 2015-09-08;
+  BRDT3 2017-12-15 is a relisting, not an event). Resolve in: before the daily engine's first
+  study.

@@ -214,8 +214,13 @@ class B3Provider(MarketDataProvider):
         last: pd.Timestamp,
     ) -> pd.DataFrame:
         """Adjust labelled raw rows if asked and shape them as provider bars."""
-        for label in sorted(set(requested) - set(rows["label"])):
-            logger.warning("No B3 data for %s from %s to %s", label, first.date(), last.date())
+        missing = sorted(set(requested) - set(rows["label"]))
+        if missing:
+            # One line per request: a long backtest asks for many windows, and listing each
+            # security on its own line buries the warnings that matter.
+            logger.warning(
+                "No B3 data for %s from %s to %s", ", ".join(missing), first.date(), last.date()
+            )
         if rows.empty:
             raise ValueError(
                 f"No B3 data for {requested} between {first.date()} and {last.date()}."
