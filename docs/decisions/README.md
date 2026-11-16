@@ -47,6 +47,7 @@ does, but *why it is not done differently*.
 | 0013 | [Corporate actions ledger](0013-corporate-actions-ledger.md) | Accepted | H3 |
 | 0014 | [Anchored price adjustment](0014-anchored-adjustment.md) | Accepted | H4 |
 | 0015 | [Point-in-time universe](0015-point-in-time-universe.md) | Accepted | H5 |
+| 0016 | [Dataset API](0016-dataset-api.md) | Proposed | H6 |
 
 ## Pending items
 
