@@ -89,7 +89,7 @@ and the index is optional: a study may trade a fixed list of tickers.
   |---|---|---|---|
   | 1. Time | when is it fitted, when is it traded? | `WalkForwardSchedule` → `Window` | a calendar |
   | 2. Universe | which securities may it trade in a window? | `UniverseRule`: `StaticUniverse`, `IndexComposition` | the dataset |
-  | 3. Eligibility | which of them have enough data? | `EligibilityRule`: `HasHistory`, `StillTrading` | the dataset |
+  | 3. Eligibility | which of them have enough data? | `EligibilityRule`: `HasHistory`, `StillTrading`, `MinimumPresence` | the dataset |
   | 4. Assembly and data | the folds, and the bars of each | `WalkForward` → `Fold` → `FoldData` | the three above |
 
   A study can stop at any layer: windows alone for a hand-made loop, a fixed list of
@@ -120,7 +120,7 @@ and the index is optional: a study may trade a fixed list of tickers.
   )
   folds = walk.folds(ds)
   data = folds[0].load(ds)  # FoldData(train, test)
-  walk.summary(ds)  # one row per fold, for inspection
+  WalkForward.summary(folds)  # one row per fold, for inspection
   ```
 
 - **B1.4 — Layer 1: time.** `WalkForwardSchedule(start, end, train_months, test_months,
@@ -145,22 +145,32 @@ and the index is optional: a study may trade a fixed list of tickers.
   | `decision_start`, `decision_end` | sessions whose close makes the window's orders |
   | `test_start`, `test_end` | sessions where those orders are executed and held |
 
-- **B1.5 — Layer 2: universe rules.** A `UniverseRule` turns a window into a `Selection`:
-  the candidate `security_id` values, the `Universe` that masks the test panel, and, when
-  there is one, the index period and its source.
+- **B1.5 — Layer 2: universe rules.** A `UniverseRule` (abstract) answers two questions
+  about a window: `select(ds, window)`, the `Selection` of candidates, and `cuts(window)`,
+  the months where the window must be cut because the universe changes (none by default).
 
-  - `StaticUniverse(universe)` takes any `Universe` of ADR 0015 or 0016 (tickers, an index
-    code, `Index`, `LiquidityRule`, combinations). The candidates are its members on any
-    session of the test window; the test panel keeps the universe's own mask, so a
-    point-in-time `Index("IBOV")` still follows B3's effective dates. With a ticker list
-    no index is involved.
-  - `IndexComposition(index, effective="quadrimester", at_rebalance="split")` takes the
-    members of one index period, by label, from `B3Dataset.composition` (B1.8):
+  | `Selection` field | Meaning |
+  |---|---|
+  | `security_ids` | candidate `security_id` values |
+  | `unresolved` | tickers of members with no `security_id` (dropped as `unresolved`, B1.7) |
+  | `universe` | a `Universe` whose own mask the test panel keeps, or none |
+  | `index`, `period`, `source` | the index period used, when there is one |
 
-    | Option | Values |
+  - `StaticUniverse(universe)` takes any universe argument of `ds.panel` (a ticker list,
+    an index code, `Index`, `LiquidityRule`, combinations). The candidates are its members
+    on any session of the test window (`ds.members`, B1.8), and the test panel keeps the
+    universe's own mask, so a point-in-time `Index("IBOV")` follows B3's effective dates.
+    It never cuts a window. With a ticker list no index is involved.
+  - `IndexComposition(index, at_rebalance="split")` takes the members of the index period
+    of the quadrimester that contains the test window (January–April, May–August,
+    September–December), by label, from `ds.composition` (B1.8). It applies from the first
+    session of the quadrimester, not from B3's effective date (the first Monday): the
+    members of the 3rd preview are known before the month turns.
+
+    | `at_rebalance` | Behaviour |
     |---|---|
-    | `effective` | `"quadrimester"`: the period of January, May or September applies from the first session of its month, since the members of the 3rd preview are known before the month turns; `"b3"`: from B3's effective date (ADR 0015, H5.3) |
-    | `at_rebalance` | `"split"`: a test window that crosses the start of a period is cut there, and each piece is a fold with its own decision session, training window and composition; `"hold"`: the composition at the window's start is kept to its end |
+    | `"split"` | a test window that crosses the start of a quadrimester is cut there; each piece is a fold with its own decision session, training window and composition |
+    | `"hold"` | the composition at the window's start is kept to its end |
 
     With `"split"`, a security that leaves the index is sold on the first session of the
     new period, and one that joins is fitted before it is traded: the rule of the study.
@@ -171,36 +181,54 @@ and the index is optional: a study may trade a fixed list of tickers.
     `IBXX`, any period before 2017-09): the study picks a start, the rule does not invent
     members.
 
-- **B1.6 — Layer 3: eligibility rules.** Each `EligibilityRule` keeps or drops a
-  candidate, with a reason. A dropped security is listed in the fold (`excluded`) and is
-  neither fitted nor traded, even if it is in the index. Rules are applied in order; the
-  default is the strict pair:
+- **B1.6 — Layer 3: eligibility rules.** An `EligibilityRule` (abstract) has one method,
+  `apply(ds, window, security_ids, warmup)`, which returns for each security the reason it
+  is dropped, or nothing when it is kept. It reads data up to the decision session only:
+  what was known when the fold was decided. Rules are applied in order, each to the
+  securities the previous ones kept; the default is the strict pair
+  `(HasHistory(cover="train"), StillTrading())`, and an empty sequence keeps every
+  candidate.
 
   | Rule | Keeps a security when | Reason when dropped |
   |---|---|---|
   | `HasHistory(cover="train")` | its first session is on or before the first warmup bar before the training window: `warmup` bars plus the whole training window | `short_history` |
-  | `HasHistory(cover="test")` | it has `warmup` bars before the test window (looser; for studies without fitting) | `short_history` |
+  | `HasHistory(cover="test")` | it has `warmup` bars before the decision session (looser; for studies that fit nothing) | `short_history` |
   | `StillTrading()` | its last session is on or after the decision session | `stopped_trading` |
+  | `MinimumPresence(fraction, cover="train")` | it traded on at least `fraction` of the sessions covered (the training window, or the `warmup` bars before the decision session) | `low_presence` |
 
-  The first and last sessions come from `ds.ticker_history`. An empty `eligibility` keeps
-  every candidate.
+  History is the date of the first session; how often a security traded is
+  `MinimumPresence`'s question, not `HasHistory`'s. First and last sessions come from
+  `ds.ticker_history` (earliest first and latest last over every ticker a security
+  carried); presence counts the sessions with a close in the raw bars.
+
+  **What this layer is not.** It decides once per fold whether a security has the data to
+  be fitted and traded. A selection that changes bar by bar from the strategy's own
+  results (the top 20 by rolling Sharpe ratio, say) is part of the strategy, not of the
+  walk-forward: in E1 it is a mask the strategy computes with its weights; in E2 and E3 it
+  is a stateful component updated at each bar, designed with them.
 
 - **B1.7 — Layer 4: folds.** `WalkForward(schedule, universe, eligibility, warmup)`
-  assembles one `Fold` per window, or per piece of a split window:
+  assembles one `Fold` per window, or per piece of a window the universe rule cuts. The
+  pieces are built by `schedule.window` (B1.4), with the schedule's own rule.
 
   | `Fold` field | Meaning |
   |---|---|
   | `window` | the `Window` (B1.4), cut if split |
   | `securities` | eligible `security_id` values |
-  | `universe` | the test panel's `Universe`: `Securities(securities)`, or `Securities(securities) & universe` for a static universe with its own mask |
-  | `excluded` | candidates dropped, with the reason |
-  | `index`, `period`, `source` | for `IndexComposition`; empty otherwise |
+  | `universe` | the test panel's `Universe`: `Securities(securities)`, intersected with the selection's universe when it has one |
+  | `excluded` | a frame of the candidates dropped: `security_id`, `ticker` (on the decision session; the portfolio's ticker when unresolved) and `reason` (`unresolved`, then the first rule that dropped it) |
+  | `index`, `period`, `source` | from the selection; empty for a static universe |
   | `warmup` | bars of history before each range |
+
+  A fold without an eligible security raises `WalkForwardError` naming the window and
+  counting the drops by reason: an empty fold would turn into cash without a word.
+  `WalkForward.summary(folds)` gives one row per fold (dates, period, source, candidates,
+  securities, drops by reason) for inspection.
 
   The training universe is the fold's securities: the composition known at the decision,
   fitted on its members' past.
 
-- **B1.8 — Data per fold, and two additions to the data API.**
+- **B1.8 — Data per fold, and three additions to the data API.**
   `fold.load(ds, fields=None, adjustment="total_return")` returns `FoldData(train, test)`:
 
   - `train`: `Securities(fold.securities)` over `[train_start, train_end]` with `warmup`
@@ -214,9 +242,10 @@ and the index is optional: a study may trade a fixed list of tickers.
   test window needs an anchor per decision, which is E2's job (P12).
 
   The data API gains `Securities(security_ids)`, a `Universe` of fixed `security_id`
-  values, true on every session (combinable like the others), and
+  values, true on every session (combinable like the others);
   `B3Dataset.composition(index, period)`, the members of one period by its label, with the
-  columns of `constituents`.
+  columns of `constituents`; and `B3Dataset.members(universe, start, end)`, the membership
+  mask of a universe argument over the sessions of a range, as `ds.panel` computes it.
 
 ### E1 position engine
 
@@ -338,9 +367,14 @@ and the index is optional: a study may trade a fixed list of tickers.
 - **`hold` as the only behaviour at a rebalance.** Simple, but a member that leaves the
   index would stay traded until the window ends, against the study's rule. Kept as an
   option; `split` is the default.
-- **Universe from B3's effective date by default.** The members are known from the 3rd
-  preview, so the quadrimester's first session is the natural start; `effective="b3"`
-  keeps the other.
+- **An `effective` option in `IndexComposition`** (the quadrimester's first session or
+  B3's effective date). Dropped before implementation: a cut at B3's date falls on a
+  Monday inside the month, which the time layer does not build; and a study that follows
+  B3's dates already has `StaticUniverse(Index(...))`, whose mask changes on them.
+- **Bar-by-bar selection in the walk-forward** (top-N by rolling Sharpe ratio, as in the
+  first prototype's `UniverseEligibility`). Rejected here: it depends on the strategy's
+  results and changes inside a fold. It belongs to the strategy (E1) or to a stateful
+  component of the event loop (E2, E3).
 - **Point-in-time membership over the training window.** Rejected: the decision is taken
   with the composition known at the decision, and the strategy is fitted on those members'
   past. Members join an index after gaining liquidity, so the training sample leans to
@@ -374,7 +408,7 @@ and the index is optional: a study may trade a fixed list of tickers.
 
   | Step | Scope |
   |---|---|
-  | B1.a | `Securities` and `B3Dataset.composition` (B1.8) |
+  | B1.a | `Securities` and `B3Dataset.composition` (B1.8); `B3Dataset.members` comes with B1.c |
   | B1.b | Layer 1: `WalkForwardSchedule`, `Window` (B1.4) |
   | B1.c | Layers 2 to 4: universe and eligibility rules, `WalkForward`, `Fold`, `FoldData` (B1.5–B1.8) |
   | B1.d | `simulate_weights`, `BacktestResult`, `equal_weight` (B1.9–B1.16) |
@@ -382,7 +416,7 @@ and the index is optional: a study may trade a fixed list of tickers.
   | B1.f | `simulate_day_trades` (B1.17–B1.21) |
 
 - Closing criteria: tests on the synthetic base for each layer alone (free durations,
-  rolling and expanding windows; static and index universes, both `effective` and both
-  `at_rebalance` options, the composition gap; both eligibility rules), for the position engine (drift, both execution
+  rolling and expanding windows; static and index universes, both `at_rebalance` options,
+  the composition gap, unresolved members; every eligibility rule; an empty fold), for the position engine (drift, both execution
   conventions, suspension, exit, costs) and for the day-trade engine (strict fills, both
   sides, stops, ex-session on the adjusted panel); notebook 0003 meets B1.22; 100% coverage.
