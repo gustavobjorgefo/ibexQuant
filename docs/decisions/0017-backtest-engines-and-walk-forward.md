@@ -11,8 +11,9 @@ H0 to H6 built a survivorship-free B3 base and one call to read it, `ds.panel(..
 equal-weight portfolio held until the next rebalance. This record turns that loop into
 code, in two pieces:
 
-1. a **walk-forward schedule** that cuts history into training and test windows and gives
-   each window its universe, taken from an index (IBrX 100 first, `IBXX`);
+1. a **walk-forward** in layers: the training and test windows, the universe of each
+   window (a fixed list, or an index such as the IBrX 100, `IBXX`), the securities with
+   enough history, and the data of each window;
 2. the **simplest engine**, vectorized, for fast and shallow studies in notebooks.
 
 It also fixes the map of engines the project will grow into, so the simple engine does not
@@ -22,21 +23,23 @@ take decisions that belong to the others.
 
 The universe is an index's member list, not its weights: it controls the sample and keeps
 survivorship out. B3 revises the portfolios every four months (January–April, May–August,
-September–December). A strategy is fitted on 12 months and traded on the next month, out
-of sample; the window moves one month at a time. For a test in January, the members of
-the January–April portfolio are fitted on January–December of the year before and traded
-in January; February, March and April use the same members; May takes the new portfolio.
+September–December). A strategy is fitted on some months and traded on the next ones, out
+of sample; the window then moves on. With 12 months of training and 1 of test: for a test
+in January, the members of the January–April portfolio are fitted on January–December of
+the year before and traded in January; February, March and April use the same members;
+May takes the new portfolio. The durations are the study's choice (18 and 3, 36 and 6),
+and the index is optional: a study may trade a fixed list of tickers.
 
 ### What the base gives
 
 | Finding | Evidence | Decision |
 |---|---|---|
-| A period starts on the first Monday of January, May or September (second Monday from 2027), not on the 1st | ADR 0015, H5.3 | B1.4 |
-| The members of a new portfolio are set by the 3rd preview, published before the month turns; the definitive portfolio changes weights, not members | Manual of B3 indices, 2.3; ADR 0015, H5.1 | B1.4 |
-| `IBXX` compositions come from B3's workbooks, from 2017-09; the retroactive series and the liquidity rule cover `IBOV` only | ADR 0015, H5.1, H5.6 | B1.4 |
+| A period starts on the first Monday of January, May or September (second Monday from 2027), not on the 1st | ADR 0015, H5.3 | B1.5 |
+| The members of a new portfolio are set by the 3rd preview, published before the month turns; the definitive portfolio changes weights, not members | Manual of B3 indices, 2.3; ADR 0015, H5.1 | B1.5 |
+| `IBXX` compositions come from B3's workbooks, from 2017-09; the retroactive series and the liquidity rule cover `IBOV` only | ADR 0015, H5.1, H5.6 | B1.5 |
 | After a member stops trading its bars are `NaN` to the end of the panel; the exit is listed in `index_exits` | ADR 0015, H5.8; ADR 0016, H6.6 | B1.12 |
 | Returns of `total_return` prices do not depend on the anchor; levels (targets, stops) do | ADR 0005, 0014 | B1.15, B1.20 |
-| `ds.ticker_history` gives each security's first and last session | ADR 0016, H6.2 | B1.5 |
+| `ds.ticker_history` gives each security's first and last session | ADR 0016, H6.2 | B1.6 |
 
 ## Decision
 
@@ -62,14 +65,14 @@ in January; February, March and April use the same members; May takes the new po
     of the position engine. (Day trading on intraday bars is the position model on
     intraday bars.)
 
-  This record designs E1 for both models and the walk-forward schedule. E2 and E3 get their
+  This record designs E1 for both models and the walk-forward. E2 and E3 get their
   own records.
 
 - **B1.2 — Package.** `ibexQuant.backtest`:
 
   | Module | Content |
   |---|---|
-  | `schedule.py` | `WalkForwardSchedule`, `Window`, `WindowData` |
+  | `walkforward/` | one module per layer (B1.3): `schedule.py`, `universe.py`, `eligibility.py`, `folds.py` |
   | `vectorized.py` | E1 position engine: `simulate_weights`, `BacktestResult` |
   | `daytrade.py` | E1 day-trade engine: `DayTradeOrders`, `simulate_day_trades` |
   | `weights.py` | target-weight helpers, starting with `equal_weight` |
@@ -77,84 +80,141 @@ in January; February, March and April use the same members; May takes the new po
   Strategies, their parameters and their fitting live outside the package (in notebooks
   now, in the private repository when they are real). The engines never fit anything.
 
-### Walk-forward schedule
+### Walk-forward
 
-- **B1.3 — Windows on calendar months.** A test window is the sessions of `test_months`
-  calendar months; its training window is the `train_months` calendar months before it
-  (rolling; `expanding=True` keeps the first training start). The schedule steps by
-  `test_months`. Defaults: 12 and 1.
+- **B1.3 — Four layers, each usable alone.** The walk-forward is not one object that does
+  everything. Each layer answers one question and knows nothing of the layers above it:
+
+  | Layer | Question | Objects | Needs |
+  |---|---|---|---|
+  | 1. Time | when is it fitted, when is it traded? | `WalkForwardSchedule` → `Window` | a calendar |
+  | 2. Universe | which securities may it trade in a window? | `UniverseRule`: `StaticUniverse`, `IndexComposition` | the dataset |
+  | 3. Eligibility | which of them have enough data? | `EligibilityRule`: `HasHistory`, `StillTrading` | the dataset |
+  | 4. Assembly and data | the folds, and the bars of each | `WalkForward` → `Fold` → `FoldData` | the three above |
+
+  A study can stop at any layer: windows alone for a hand-made loop, a fixed list of
+  tickers without any index, or the full stack. A new rule (a liquidity filter, a sector
+  universe, a rule read from the private repository) is a new class of one layer, never a
+  flag of another.
 
   ```python
-  from ibexQuant.backtest import WalkForwardSchedule
-
-  schedule = WalkForwardSchedule(
-      index="IBXX",
-      start="2019-01",  # first test month
-      end="2026-10",  # last test month
-      train_months=12,
-      test_months=1,
-      warmup=252,  # bars of history before the training window
+  from ibexQuant.backtest.walkforward import (
+      HasHistory,
+      IndexComposition,
+      StaticUniverse,
+      StillTrading,
+      WalkForward,
+      WalkForwardSchedule,
   )
-  windows = schedule.windows(ds)  # list[Window]
-  schedule.summary(ds)  # one row per window, for inspection
+
+  # Layer 1 alone: the windows.
+  schedule = WalkForwardSchedule(start="2019-01", end="2026-10", train_months=18, test_months=3)
+  windows = schedule.windows(ds.calendar)
+
+  # All layers: windows, index universe, eligibility, data.
+  walk = WalkForward(
+      schedule,
+      universe=IndexComposition("IBXX"),  # or StaticUniverse(["PETR4", "VALE3"])
+      eligibility=(HasHistory(cover="train"), StillTrading()),
+      warmup=252,
+  )
+  folds = walk.folds(ds)
+  data = folds[0].load(ds)  # FoldData(train, test)
+  walk.summary(ds)  # one row per fold, for inspection
   ```
 
-  The schedule is a specification: it holds no data, and `windows(ds)` reads the
-  dataset. Windows are calendar ranges over B3 sessions; only `warmup` counts bars, so the
-  same schedule serves intraday or event bars later.
+- **B1.4 — Layer 1: time.** `WalkForwardSchedule(start, end, train_months, test_months,
+  step_months=None, expanding=False)` holds no data. A test window is the sessions of
+  `test_months` calendar months; its training window is the `train_months` calendar months
+  before it (rolling, or from the first training start with `expanding=True`); windows
+  start every `step_months` (default `test_months`, so test windows tile the range without
+  overlap). `start` and `end` are the first and last test months. Durations are free: 12
+  and 1, 18 and 3, 36 and 6. `windows(calendar)` maps them to sessions of any
+  `TradingCalendar`; the schedule never counts bars, so the same schedule serves intraday or
+  event bars later.
 
-- **B1.4 — Universe per window: the quadrimester's composition, from the 1st.** The
-  universe of a test window is the composition of the index period of the quadrimester that
-  contains it (January–April, May–August, September–December), labelled by its first month
-  (`2025-05`). It applies from the first session of that month, not from B3's effective
-  date: the members are those of the 3rd preview, known before the month turns. The
-  composition is the best source of the period (H5.1); its source is shown in the window.
-
-  `test_months` must divide 4 (1, 2 or 4), so that a test window never crosses two
-  quadrimesters. A window whose period has no composition of the index raises
-  `ScheduleError` naming the period (for `IBXX`, any period before 2017-09): the study picks
-  a start, the schedule does not invent members.
-
-- **B1.5 — Eligibility: full history or out.** A member is traded in a window only if its
-  first session is on or before the first warmup bar before the training window (the
-  `warmup` bars plus the whole training window), and its last session is on or after the
-  decision session (B1.6). Members that fail are listed in the window with the reason
-  (`short_history`, `stopped_trading`) and are neither fitted nor traded, even though they
-  are in the index. The training universe is the test window's universe: the composition
-  known at the decision, fitted on its members' past (B1.7).
-
-- **B1.6 — Decisions at the close, execution in the test window.** A signal uses data up to
-  the close of a session and is executed in the next session. The decisions of a test
-  window are therefore the session before each test session: from the last session before
-  the test window (the *decision session*, where the strategy is fitted and the first
-  orders are formed) to the second to last test session. The last test session's decision
-  belongs to the next window.
+  Decisions are taken at the close and executed in the next session. The decisions of a
+  test window are the session before each test session: from the last session before the
+  window (the *decision session*, where the strategy is fitted and the first orders are
+  formed) to the second to last test session. The last test session's decision belongs to
+  the next window.
 
   | `Window` field | Meaning |
   |---|---|
-  | `index`, `period`, `source` | index, quadrimester composition used, its source |
-  | `universe` | eligible `security_id` values |
-  | `excluded` | members left out, with the reason (B1.5) |
   | `train_start`, `train_end` | training range; `train_end` is the decision session |
   | `decision_start`, `decision_end` | sessions whose close makes the window's orders |
   | `test_start`, `test_end` | sessions where those orders are executed and held |
+
+- **B1.5 — Layer 2: universe rules.** A `UniverseRule` turns a window into a `Selection`:
+  the candidate `security_id` values, the `Universe` that masks the test panel, and, when
+  there is one, the index period and its source.
+
+  - `StaticUniverse(universe)` takes any `Universe` of ADR 0015 or 0016 (tickers, an index
+    code, `Index`, `LiquidityRule`, combinations). The candidates are its members on any
+    session of the test window; the test panel keeps the universe's own mask, so a
+    point-in-time `Index("IBOV")` still follows B3's effective dates. With a ticker list
+    no index is involved.
+  - `IndexComposition(index, effective="quadrimester", at_rebalance="split")` takes the
+    members of one index period, by label, from `B3Dataset.composition` (B1.8):
+
+    | Option | Values |
+    |---|---|
+    | `effective` | `"quadrimester"`: the period of January, May or September applies from the first session of its month, since the members of the 3rd preview are known before the month turns; `"b3"`: from B3's effective date (ADR 0015, H5.3) |
+    | `at_rebalance` | `"split"`: a test window that crosses the start of a period is cut there, and each piece is a fold with its own decision session, training window and composition; `"hold"`: the composition at the window's start is kept to its end |
+
+    With `"split"`, a security that leaves the index is sold on the first session of the
+    new period, and one that joins is fitted before it is traded: the rule of the study.
+    The next windows keep the schedule's grid. With 12 and 1 nothing is cut; with 18 and 3
+    from January, the window April–June becomes April and May–June.
+
+    A period without a composition of the index raises `WalkForwardError` naming it (for
+    `IBXX`, any period before 2017-09): the study picks a start, the rule does not invent
+    members.
+
+- **B1.6 — Layer 3: eligibility rules.** Each `EligibilityRule` keeps or drops a
+  candidate, with a reason. A dropped security is listed in the fold (`excluded`) and is
+  neither fitted nor traded, even if it is in the index. Rules are applied in order; the
+  default is the strict pair:
+
+  | Rule | Keeps a security when | Reason when dropped |
+  |---|---|---|
+  | `HasHistory(cover="train")` | its first session is on or before the first warmup bar before the training window: `warmup` bars plus the whole training window | `short_history` |
+  | `HasHistory(cover="test")` | it has `warmup` bars before the test window (looser; for studies without fitting) | `short_history` |
+  | `StillTrading()` | its last session is on or after the decision session | `stopped_trading` |
+
+  The first and last sessions come from `ds.ticker_history`. An empty `eligibility` keeps
+  every candidate.
+
+- **B1.7 — Layer 4: folds.** `WalkForward(schedule, universe, eligibility, warmup)`
+  assembles one `Fold` per window, or per piece of a split window:
+
+  | `Fold` field | Meaning |
+  |---|---|
+  | `window` | the `Window` (B1.4), cut if split |
+  | `securities` | eligible `security_id` values |
+  | `universe` | the test panel's `Universe`: `Securities(securities)`, or `Securities(securities) & universe` for a static universe with its own mask |
+  | `excluded` | candidates dropped, with the reason |
+  | `index`, `period`, `source` | for `IndexComposition`; empty otherwise |
   | `warmup` | bars of history before each range |
 
-- **B1.7 — Data per window.** `window.load(ds, fields=None, adjustment="total_return")`
-  returns `WindowData(train, test)`, two panels of `Securities(window.universe)` (B1.8):
+  The training universe is the fold's securities: the composition known at the decision,
+  fitted on its members' past.
 
-  - `train`: `[train_start, train_end]` with `warmup` bars, anchored at `train_end`;
-  - `test`: `[decision_start, decision_end]` with `warmup` bars, anchored at
-    `decision_end`.
+- **B1.8 — Data per fold, and two additions to the data API.**
+  `fold.load(ds, fields=None, adjustment="total_return")` returns `FoldData(train, test)`:
 
-  The mask is true on every session of each range: eligibility was settled by the schedule.
+  - `train`: `Securities(fold.securities)` over `[train_start, train_end]` with `warmup`
+    bars, anchored at `train_end`;
+  - `test`: `fold.universe` over `[decision_start, decision_end]` with `warmup` bars,
+    anchored at `decision_end`.
+
   The test panel is anchored at its last decision, so the adjusted levels inside it already
   carry events of later sessions of the window. Features that are scale invariant (returns,
   ratios, ranks; ADR 0005) are not affected; a strategy that uses price levels inside the
   test window needs an anchor per decision, which is E2's job (P12).
 
-- **B1.8 — Two additions to the data API.** `Securities(security_ids)`, a `Universe` of
-  fixed `security_id` values, true on every session (combinable like the others); and
+  The data API gains `Securities(security_ids)`, a `Universe` of fixed `security_id`
+  values, true on every session (combinable like the others), and
   `B3Dataset.composition(index, period)`, the members of one period by its label, with the
   columns of `constituents`.
 
@@ -177,12 +237,12 @@ in January; February, March and April use the same members; May takes the new po
   rebalance; a session without a row holds the units and lets them drift with prices.
   Values are signed (a negative weight is a short), `NaN` is zero, the cash is what is left
   (`1 - sum`), and the gross exposure is not capped. A daily-rebalanced strategy gives a
-  row every session. The engine applies the one-session lag itself (B1.6): a strategy never
+  row every session. The engine applies the one-session lag itself (B1.4): a strategy never
   shifts its signals, so it cannot forget to.
 
   `bars` covers every security the weights name, from the first decision to the last
-  session to value. With the schedule, it is one panel of `Securities` over the union of
-  the windows' universes. Returns do not depend on the anchor, so one panel serves the whole
+  session to value. With a walk-forward, it is one panel of `Securities` over the union of
+  the folds' securities. Returns do not depend on the anchor, so one panel serves the whole
   run.
 
 - **B1.10 — Accounting.** Initial equity 1, fractional units, cash at 0%. On an execution
@@ -272,15 +332,22 @@ in January; February, March and April use the same members; May takes the new po
 - **One engine with a day-trade flag.** Rejected: positions carried across bars and a P&L
   that never becomes a position have different accounting; a flag would put conditionals in
   every step of the position engine.
-- **Universe from B3's effective date (`Index` mask).** Rejected for the schedule: the
-  members are known from the 3rd preview, and calendar months keep windows and universes
-  aligned. `Index` stays for studies that follow the real index.
+- **One schedule object with the index built in.** The first draft of this record. It
+  forced every study through an index and fixed durations that divide the quadrimester;
+  replaced by layers (B1.3).
+- **`hold` as the only behaviour at a rebalance.** Simple, but a member that leaves the
+  index would stay traded until the window ends, against the study's rule. Kept as an
+  option; `split` is the default.
+- **Universe from B3's effective date by default.** The members are known from the 3rd
+  preview, so the quadrimester's first session is the natural start; `effective="b3"`
+  keeps the other.
 - **Point-in-time membership over the training window.** Rejected: the decision is taken
   with the composition known at the decision, and the strategy is fitted on those members'
   past. Members join an index after gaining liquidity, so the training sample leans to
   securities that did well; the bias is known and the test window never sees it.
-- **Warmup only before the test window.** Rejected: a member traded without its full
-  training history is fitted on less data than the others. Stricter is simpler.
+- **Warmup only before the test window as the default.** A member traded without its full
+  training history is fitted on less data than the others; stricter is simpler. Kept as
+  `HasHistory(cover="test")` for studies that fit nothing.
 - **Weights as a constant mix (daily rebalance by default).** Rejected: a holder sees
   drift; rebalancing every day is one row per session.
 - **The strategy shifts its own signals** (`position.shift(1)`). Rejected: the most common
@@ -292,8 +359,8 @@ in January; February, March and April use the same members; May takes the new po
 
 ## Consequences
 
-- **P5** resolved: the schedule loads `warmup` bars before each training and test range,
-  and eligibility requires them (B1.5, B1.7).
+- **P5** resolved: a fold loads `warmup` bars before each training and test range, and
+  `HasHistory` requires them (B1.6, B1.8).
 - **P10** resolved for E1: an exit is cash at the last close (B1.12). E2 keeps it, with raw
   prices.
 - **P6, P9, P11, P12** stay with E2; P12 for levels inside a vectorized study is covered by
@@ -301,19 +368,21 @@ in January; February, March and April use the same members; May takes the new po
   an E1 study from 2016 crosses none of the jumps it lists.
 - New pending item **P14**: cash yield. Uninvested cash earns 0% in E1; E2 credits the CDI
   (series to be added to the base).
-- `IBXX` test windows start in 2017-09 at the earliest; an earlier start raises (B1.4).
+- `IBXX` test windows start in 2017-09 at the earliest; an earlier start raises (B1.5).
   The training window may reach before it: it reads bars, not compositions.
 - Implementation steps:
 
   | Step | Scope |
   |---|---|
   | B1.a | `Securities` and `B3Dataset.composition` (B1.8) |
-  | B1.b | `WalkForwardSchedule`, `Window`, `WindowData` (B1.3–B1.7) |
-  | B1.c | `simulate_weights`, `BacktestResult`, `equal_weight` (B1.9–B1.16) |
-  | B1.d | Notebook 0003: acceptance against 0002, `IBXX` walk-forward, costs (B1.22) |
-  | B1.e | `simulate_day_trades` (B1.17–B1.21) |
+  | B1.b | Layer 1: `WalkForwardSchedule`, `Window` (B1.4) |
+  | B1.c | Layers 2 to 4: universe and eligibility rules, `WalkForward`, `Fold`, `FoldData` (B1.5–B1.8) |
+  | B1.d | `simulate_weights`, `BacktestResult`, `equal_weight` (B1.9–B1.16) |
+  | B1.e | Notebook 0003: acceptance against 0002, `IBXX` walk-forward, costs (B1.22) |
+  | B1.f | `simulate_day_trades` (B1.17–B1.21) |
 
-- Closing criteria: tests on the synthetic base for windows (quadrimester boundaries, the
-  composition gap, both exclusion reasons), for the position engine (drift, both execution
+- Closing criteria: tests on the synthetic base for each layer alone (free durations,
+  rolling and expanding windows; static and index universes, both `effective` and both
+  `at_rebalance` options, the composition gap; both eligibility rules), for the position engine (drift, both execution
   conventions, suspension, exit, costs) and for the day-trade engine (strict fills, both
   sides, stops, ex-session on the adjusted panel); notebook 0003 meets B1.22; 100% coverage.

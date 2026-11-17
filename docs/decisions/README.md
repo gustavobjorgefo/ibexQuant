@@ -111,7 +111,7 @@ every close.
 
 | Part              | Scope                                                                 | Status      |
 |-------------------|-----------------------------------------------------------------------|-------------|
-| Walk-forward (B1) | `WalkForwardSchedule`: monthly windows, quadrimester universe, warmup | Not started |
+| Walk-forward (B1) | Layers: time windows, universe rules (static, index), eligibility, folds and their data | Not started |
 | E1 position (B1)  | Vectorized target weights, drift, exits as cash, linear costs         | Not started |
 | E1 day-trade (B1) | Limit fills on strict crossing at the limit price, stops, flat at the close | Not started |
 | E2                | Event loop over precomputed signals: raw execution, event cash, tick and lot, trades table (P6, P9–P12, P14) | Not started |
