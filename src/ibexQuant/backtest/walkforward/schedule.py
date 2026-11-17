@@ -187,7 +187,9 @@ class WalkForwardSchedule:
             )
         return result
 
-    def window(self, first: DateLike, last: DateLike, calendar: TradingCalendar) -> Window:
+    def window(
+        self, first: DateLike | pd.Period, last: DateLike | pd.Period, calendar: TradingCalendar
+    ) -> Window:
         """
         Return the window testing the months ``first`` to ``last``.
 
@@ -253,8 +255,8 @@ class WalkForwardSchedule:
         )
 
 
-def _month(value: DateLike, name: str) -> pd.Period:
-    """Read a month from ``"YYYY-MM"``, ``"YYYY-MM-DD"`` or a timestamp."""
+def _month(value: DateLike | pd.Period, name: str) -> pd.Period:
+    """Read a month from ``"YYYY-MM"``, ``"YYYY-MM-DD"``, a timestamp or a period."""
     message = f"{name} is not a month (YYYY-MM) or a date (YYYY-MM-DD): {value!r}."
     if isinstance(value, str) and MONTH_PATTERN.fullmatch(value) is None:
         raise ValueError(message)

@@ -192,13 +192,10 @@ class B3Dataset:
         if warmup < 0:
             raise ValueError(f"warmup must be zero or positive, got {warmup}.")
 
-        decisions = self._calendar.valid_sessions(start, end)
-        if decisions.empty:
-            raise ValueError(f"No B3 session between {start} and {end}.")
+        members = self.members(spec, start, end)
+        decisions = pd.DatetimeIndex(members.index)
         first = self._calendar.offset(decisions[0], warmup)
         last = decisions[-1]
-
-        members = universe_mask(spec, decisions, data=self._universe_data())
         if members.columns.empty:
             raise ValueError(
                 f"{spec} has no member between {decisions[0].date()} and {last.date()}."
@@ -217,6 +214,40 @@ class B3Dataset:
         panel = Panel.from_bars(aligned)
         mask = members.reindex(index=panel.index, columns=list(panel.symbols), fill_value=False)
         return panel.with_universe_mask(mask.astype(bool))
+
+    def members(
+        self, universe: Universe | str | Sequence[str], start: DateLike, end: DateLike
+    ) -> pd.DataFrame:
+        """
+        Return the membership of a universe at each session of ``[start, end]``.
+
+        The mask :meth:`panel` uses, without loading bars (ADR 0017, B1.8).
+
+        Parameters
+        ----------
+        universe : Universe, str or sequence of str
+            A universe specification, an index code or a list of tickers.
+        start, end : str or pandas.Timestamp
+            Range of sessions.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Boolean, indexed by session, one column per ``security_id`` that is a
+            member on at least one session, sorted.
+
+        Raises
+        ------
+        TypeError
+            If ``universe`` is not a ``Universe``, a string or a sequence of strings.
+        ValueError
+            If the range has no session.
+        """
+        spec = as_universe(universe)
+        sessions = self._calendar.valid_sessions(start, end)
+        if sessions.empty:
+            raise ValueError(f"No B3 session between {start} and {end}.")
+        return universe_mask(spec, sessions, data=self._universe_data())
 
     # --- lookups ---
 

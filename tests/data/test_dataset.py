@@ -197,6 +197,21 @@ def test_constituents_on_a_date(ds: B3Dataset) -> None:
     assert ds.constituents("IBOV", "2024-04-01").empty
 
 
+def test_members(ds: B3Dataset) -> None:
+    mask = ds.members("IBOV", "2024-08-29", "2024-09-03")
+    assert mask.columns.tolist() == SEPTEMBER
+    assert mask.index.equals(
+        pd.DatetimeIndex(["2024-08-29", "2024-08-30", "2024-09-02", "2024-09-03"])
+    )
+    assert not mask.loc["2024-08-30", "BRLATE"]
+    assert mask.loc["2024-09-02"].all()
+
+
+def test_members_needs_a_session(ds: B3Dataset) -> None:
+    with pytest.raises(ValueError, match="No B3 session between 2024-03-02 and 2024-03-03"):
+        ds.members(["PETR4"], "2024-03-02", "2024-03-03")
+
+
 def test_composition_of_a_period(ds: B3Dataset) -> None:
     members = ds.composition("IBOV", "2024-09")
     assert members.equals(ds.constituents("IBOV", "2024-09-10"))

@@ -58,6 +58,13 @@
 - `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
   provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
   `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).
+- `ibexQuant.backtest.walkforward`, layers 2 to 4 (ADR 0017, B1.5–B1.8): universe rules
+  (`UniverseRule`, `StaticUniverse`, `IndexComposition` with `at_rebalance="split"` or
+  `"hold"`), eligibility rules (`EligibilityRule`, `HasHistory`, `StillTrading`,
+  `MinimumPresence`) and `WalkForward`, whose `folds(ds)` gives `Fold` objects with their
+  excluded candidates and `load(ds)` gives their `FoldData`; `WalkForward.summary(folds)`.
+- `B3Dataset.members(universe, start, end)`: the membership mask `ds.panel` uses, without
+  bars (ADR 0017, B1.8).
 - `ibexQuant.backtest.walkforward`, layer 1 (ADR 0017, B1.4): `WalkForwardSchedule(start,
   end, train_months=..., test_months=..., step_months=None, expanding=False)` cuts any
   `TradingCalendar` into `Window` objects (training, decision and test sessions), with
