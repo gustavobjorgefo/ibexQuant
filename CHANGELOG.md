@@ -58,6 +58,11 @@
 - `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
   provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
   `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).
+- `ibexQuant.backtest.walkforward`, layer 1 (ADR 0017, B1.4): `WalkForwardSchedule(start,
+  end, train_months=..., test_months=..., step_months=None, expanding=False)` cuts any
+  `TradingCalendar` into `Window` objects (training, decision and test sessions), with
+  `window(first, last, calendar)` for one range of test months, `frame(calendar)` and
+  `tiles`; `WalkForwardError`.
 - `Securities([...])`: a universe of fixed `security_id` values, members at every session
   (ADR 0017, B1.8).
 - `B3Dataset.composition(index, period)`: the members of one index period by its label,
