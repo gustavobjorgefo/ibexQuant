@@ -38,6 +38,7 @@ from ibexQuant.data.universe.liquidity import IBOV_LIQUIDITY, LiquiditySettings
 from ibexQuant.data.universe.mask import (
     Index,
     LiquidityRule,
+    Securities,
     Tickers,
     Universe,
     UniverseData,
@@ -53,6 +54,7 @@ __all__ = [
     "PeriodOverride",
     "PeriodOverrides",
     "RuleVersion",
+    "Securities",
     "StartRule",
     "Tickers",
     "Universe",

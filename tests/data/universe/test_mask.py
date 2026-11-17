@@ -19,6 +19,7 @@ from ibexQuant.data.universe import (
     LiquidityRule,
     LiquiditySettings,
     PeriodOverrides,
+    Securities,
     Tickers,
     UniverseData,
     UniverseNotBuiltError,
@@ -136,6 +137,38 @@ def test_the_first_period_has_no_base_session(tmp_path: Path) -> None:
     data.periods.loc[0, "effective_from"] = DAY("2024-03-01")
     mask = LiquidityRule(top=2, lookback_months=1).mask(data, pd.DatetimeIndex(["2024-03-04"]))
     assert mask.empty
+
+
+# --- Securities ---
+
+
+def test_securities_are_members_at_every_session(store: DataStore) -> None:
+    mask = universe_mask(Securities(["BRVALE", "BRPETR"]), SESSIONS, store)
+    assert mask.columns.tolist() == ["BRPETR", "BRVALE"]
+    assert mask.index.equals(SESSIONS)
+    assert mask.to_numpy().all()
+
+
+def test_securities_keep_one_of_each_and_take_a_string() -> None:
+    assert Securities(["BRVALE", "BRPETR", "BRVALE"]).security_ids == ("BRVALE", "BRPETR")
+    assert Securities("BRPETR").security_ids == ("BRPETR",)
+
+
+def test_securities_do_not_check_the_master(store: DataStore) -> None:
+    mask = universe_mask(Securities("BRNONE"), SESSIONS, store)
+    assert mask.columns.tolist() == ["BRNONE"]
+
+
+def test_securities_need_one_id() -> None:
+    with pytest.raises(ValueError, match="at least one security_id"):
+        Securities([])
+
+
+def test_securities_combine_with_an_index(store: DataStore) -> None:
+    day = pd.DatetimeIndex(["2024-09-02"])
+    chosen = Securities(["BRPETR", "BRPAUS"])
+    assert members(universe_mask(chosen & Index("IBOV"), day, store), "2024-09-02") == ["BRPETR"]
+    assert members(universe_mask(chosen - Index("IBOV"), day, store), "2024-09-02") == ["BRPAUS"]
 
 
 # --- combinations ---
