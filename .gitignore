@@ -230,3 +230,6 @@ __marimo__/
 !tests/**/*.parquet
 !tests/**/*.zip
 !tests/**/*.csv
+
+# uv lockfile: not used; CI installs from pyproject.toml (decision of 2026-11-17)
+uv.lock
