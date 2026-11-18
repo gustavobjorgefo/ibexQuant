@@ -304,12 +304,19 @@ and the index is optional: a study may trade a fixed list of tickers.
 
   | Case | Rule |
   |---|---|
-  | No bar on the execution session, bars later (suspension) | cannot trade: units kept, target ignored for that rebalance; valued at the last close |
+  | No bar on the execution session (a suspension, or a long silence) | trades at its last close, like any other security; valued at the last close between bars |
   | No bar after its last session in `bars` (exit) | the holding becomes cash at the last close on its last session, at no cost; later targets are zero (P10 for E1) |
-  | Target on a security with no bar yet | `ValueError` |
+  | Target on a security with no price yet | `ValueError` |
 
   The member still trades on its last session: nothing tells the strategy it is the last.
   An announced tender offer excluded by hand is the strategy's choice, not the engine's.
+
+  Trading a suspended security at its last close is a fiction, and a small one for a short
+  suspension. It was chosen after notebook 0003, which showed the cost of the alternative:
+  keeping the units of a security that cannot trade held a ticker's old ISIN (ELPL4,
+  `BRELPLACNPR6`) for years at a stale price, and its return to trading in 2010 at 300
+  times that price added +345% in one session. E1 never keeps a holding it cannot price;
+  holding through a real suspension is E2's.
 
 - **B1.13 — Costs.** `cost_bps` per side on the traded notional (`|Δunits| × price`),
   default zero. Fees, slippage and impact models are E2's.
@@ -384,8 +391,7 @@ and the index is optional: a study may trade a fixed list of tickers.
   row of equal weights per IBOV period, executed at the close of its first session), E1
   reproduces the point-in-time line of notebook 0002 (daily returns within 1e-10). Then the
   same notebook runs an `IBXX` walk-forward with equal weight and monthly windows, and turns
-  on costs, measuring the effect of each change. A suspended member on a rebalance session is the one
-  expected difference: 0002 sells it at its last value, E1 keeps its units (B1.12).
+  on costs, measuring the effect of each change.
 
 ## Alternatives considered
 
@@ -421,6 +427,10 @@ and the index is optional: a study may trade a fixed list of tickers.
   taken by a security that no longer trades. Replaced by cash at the last close (B1.12).
 - **Raw prices and the tick in E1.** Rejected: E1 is for quick answers; exact accounting
   is E2's, and both read the same base.
+- **Keeping the units of a security without a bar** (the first version of B1.12). Realistic
+  for a short suspension, but it kept a stale holding for years (ELPL4, 2004–2010) and a
+  limit in sessions would add a parameter without reproducing notebook 0002. Replaced by a
+  trade at the last close.
 
 ## Consequences
 

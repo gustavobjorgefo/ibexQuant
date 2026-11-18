@@ -15,9 +15,9 @@ Contract
   of its session and executed in the next one (``next_open`` or ``next_close``).
 - Positions are signed units; short proceeds go to cash; cash earns nothing and may be
   negative.
-- A security without a bar on the execution session keeps its units; after its last bar
-  its holding is cash at the last close, at no cost; a target on a security with no bar yet
-  raises ``ValueError``.
+- A security without a bar on the execution session trades at its last close; after its
+  last bar its holding is cash at the last close, at no cost; a target on a security with
+  no price yet raises ``ValueError``.
 - Every fraction of the result is over the equity at the previous close, so
   ``returns == contributions.sum(axis=1) - costs``.
 - The only loop runs over rebalances and exits; between them, values are computed for the
@@ -141,7 +141,7 @@ def simulate_weights(
     ValueError
         If an argument is invalid, a decision session is not a session of ``bars`` (or is
         its last), a column is not a security of ``bars``, or a target names a security
-        before its first bar.
+        before its first price.
     """
     if execution not in EXECUTIONS:
         raise ValueError(f"execution must be one of {list(EXECUTIONS)}, got {execution!r}.")
@@ -212,22 +212,24 @@ class _Market:
         self, units: np.ndarray, cash: float, target: np.ndarray, event: int
     ) -> tuple[np.ndarray, np.ndarray]:
         """Units after trading to ``target`` on session ``event``, and the traded values."""
-        early = (target != 0) & (self.first_bar > event)
-        if early.any():
-            names = [self.symbols[i] for i in np.flatnonzero(early)]
-            raise ValueError(
-                f"Target on {names} before their first bar, executed on "
-                f"{self.sessions[event].date()}."
-            )
         target = np.where(self.last_bar < event, 0.0, target)
         execution = self.price[event]
         tradable = self.has_bar[event] & ~np.isnan(execution)
-        price = np.where(tradable, execution, 1.0)
-        mark = np.where(tradable, execution, np.nan_to_num(self.marked[event - 1]))
-        equity = cash + float(np.sum(units * mark))
-        # A security without a bar on the execution session keeps its units (B1.12).
-        new = np.where(tradable, target * equity / price, units)
-        return new, np.where(tradable, (new - units) * price, 0.0)
+        # A security without a bar trades at its last close, as a holder marking it would:
+        # E1 never keeps a holding it cannot price (B1.12).
+        price = np.where(tradable, execution, self.marked[event - 1])
+        priced = ~np.isnan(price)
+        early = (target != 0) & ~priced
+        if early.any():
+            names = [self.symbols[i] for i in np.flatnonzero(early)]
+            raise ValueError(
+                f"Target on {names} before their first price, executed on "
+                f"{self.sessions[event].date()}."
+            )
+        price = np.where(priced, price, 1.0)
+        equity = cash + float(np.sum(units * price))
+        new = target * equity / price
+        return new, (new - units) * price
 
 
 def _targets(weights: pd.DataFrame, market: _Market) -> dict[int, np.ndarray]:

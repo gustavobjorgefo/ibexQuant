@@ -19,7 +19,7 @@ from ibexQuant.backtest.walkforward import (
     WalkForwardSchedule,
 )
 from ibexQuant.data.dataset import B3Dataset
-from ibexQuant.data.universe import Securities, Tickers
+from ibexQuant.data.universe import Index, Securities, Tickers
 
 
 def schedule(start: str, end: str, test_months: int = 1) -> WalkForwardSchedule:
@@ -201,6 +201,27 @@ def test_an_equal_weight_walk_forward(ds: B3Dataset) -> None:
     assert (result.returns - total).abs().max() < 1e-12
     # QUIT3 stops on 2024-10-15 inside October's fold: cash from the next session on.
     assert result.weights.loc["2024-10-16":, "BRQUIT"].eq(0).all()
+
+
+def test_e1_repeats_the_loop_of_notebook_0002(ds: B3Dataset) -> None:
+    # Equal weight bought at the close of each IBOV period's first session and held (B1.22).
+    end = ds.calendar.sessions[-1]
+    edges = [*ds.rebalance_dates("IBOV", "2024-01-01", end), end]
+    pieces, rows = [], {}
+    for entry, exit_ in zip(edges[:-1], edges[1:], strict=True):
+        panel = ds.panel(Index("IBOV"), entry, exit_, fields=["close"])
+        close = panel.field("close")
+        held = close.columns[panel.universe_mask.loc[entry] & close.loc[entry].notna()]
+        value = (close[held].ffill() / close.loc[entry, held]).mean(axis=1)
+        pieces.append(value.pct_change().iloc[1:])
+        rows[ds.calendar.offset(entry, 1)] = pd.Series(1 / len(held), index=held)
+    reference = pd.concat(pieces)
+    weights = pd.DataFrame(rows).T.fillna(0.0)
+    bars = ds.panel(Securities(list(weights.columns)), weights.index[0], end, fields=["close"])
+    result = simulate_weights(bars, weights, execution="next_close")
+    compared = pd.concat([reference, result.returns], axis=1, join="inner")
+    assert len(compared) == len(reference)
+    assert (compared.iloc[:, 0] - compared.iloc[:, 1]).abs().max() < 1e-12
 
 
 # --- summary, checks and repr ---

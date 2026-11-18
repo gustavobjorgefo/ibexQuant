@@ -86,15 +86,25 @@ def test_a_missing_column_is_zero_and_shorts_fund_cash() -> None:
 # --- securities that do not trade ---
 
 
-def test_a_suspended_security_keeps_its_units() -> None:
+def test_a_suspended_security_trades_at_its_last_close() -> None:
     bars = panel({"A": [10, 10, 10, 10, 10, 10], "B": [20, 20, 20, NAN, 22, 22]})
     weights = rows((0, {"B": 1.0}), (2, {"A": 1.0}))
     result = simulate_weights(bars, weights, execution="next_close")
-    # B has no bar on session 3: it stays, and A is bought with the whole equity.
-    assert result.weights.loc[SESSIONS[3], "B"] == pytest.approx(1.0)
+    # B has no bar on session 3: it is sold at 20, its last close, and misses the move to 22.
+    assert result.weights.loc[SESSIONS[3], "B"] == 0
     assert result.weights.loc[SESSIONS[3], "A"] == pytest.approx(1.0)
-    assert result.weights.loc[SESSIONS[3], "cash"] == pytest.approx(-1.0)
-    assert result.returns.iloc[3] == pytest.approx(0.1)  # B from 20 to 22, on equity 1
+    assert result.turnover.iloc[2] == pytest.approx(2.0)
+    assert result.returns.iloc[3] == 0
+    adds_up(result)
+
+
+def test_a_silent_security_is_not_held_through_its_silence() -> None:
+    # The ELPL4 case: bought, silent for sessions, back at another price level.
+    bars = panel({"A": [10] * 6, "B": [0.1, 0.1, NAN, NAN, NAN, 30.0]})
+    weights = rows((0, {"B": 0.5, "A": 0.5}), (2, {"A": 1.0}), (3, {"A": 1.0}))
+    result = simulate_weights(bars, weights, execution="next_close")
+    assert result.weights.loc[SESSIONS[3] :, "B"].eq(0).all()
+    assert result.returns.abs().max() < 1e-15
     adds_up(result)
 
 
@@ -113,16 +123,17 @@ def test_an_exit_is_cash_at_the_last_close() -> None:
 
 def test_a_target_before_the_first_bar() -> None:
     bars = panel({"A": [10] * 6, "B": [NAN, NAN, NAN, 20, 20, 20]})
-    with pytest.raises(ValueError, match=r"Target on \['B'\] before their first bar"):
+    with pytest.raises(ValueError, match=r"Target on \['B'\] before their first price"):
         simulate_weights(bars, rows((1, {"B": 1.0})), execution="next_close")
     result = simulate_weights(bars, rows((2, {"B": 1.0})), execution="next_close")
     assert result.weights.loc[SESSIONS[3], "B"] == pytest.approx(1.0)
 
 
-def test_no_open_is_no_trade() -> None:
-    bars = panel({"A": [10] * 6}, {"A": [10, NAN, 10, 10, 10, 10]})
+def test_no_open_trades_at_the_last_close() -> None:
+    bars = panel({"A": [10, 11, 11, 11, 11, 11]}, {"A": [10, NAN, 11, 11, 11, 11]})
     result = simulate_weights(bars, rows((0, {"A": 1.0})))
-    assert result.weights["cash"].iloc[0] == 1.0
+    # Bought at 10, the close before; held to the close of 11.
+    assert result.returns.iloc[0] == pytest.approx(0.1)
 
 
 # --- costs ---

@@ -69,7 +69,7 @@ resolved; when it is, the resolving record is linked here.
 | P10 | Valuation of holdings that stop trading inside an index period (delisting returns); the exits are recorded in `index_exits.parquet` (see 0015) | Backtest engine design |
 | P11 | Execution and accounting precision: adjusted prices stay at full precision for research; orders and fills use raw prices on B3's tick and lot; cash, fees and P&L in exact cents (see 0015) | Backtest engine design |
 | P12 | Price levels kept across an ex-session (targets, stops, pending orders) are rescaled by the event's factor on the ex-session (see 0016) | Backtest engine design |
-| P13 | Corporate event quality: the ledger build flags share events of opposite direction on one ex-session as a conflict; the jumps still kept raw (1997–2000, DROG3, ELPL4, PCAR4, ENEV3) are reviewed (see 0016) | Before the daily engine's first study |
+| P13 | Corporate event quality: the ledger build flags share events of opposite direction on one ex-session as a conflict; the jumps still kept raw (1997–2000, DROG3, ELPL4, PCAR4, ENEV3) are reviewed (see 0016); ELPL4 on 2010-12-21 is the ticker moving back to `BRELPLACNPR6`, silent for years at a price in another scale (see 0017) | Before the daily engine's first study |
 | P14 | Cash yield: uninvested cash earns the CDI; the series is added to the base (see 0017) | E2 engine design |
 
 ## Roadmap

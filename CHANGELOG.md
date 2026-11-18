@@ -58,6 +58,10 @@
 - `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
   provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
   `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).
+- E1 trades a security without a bar on the execution session at its last close, instead of
+  keeping its units: notebook 0003 found a stale holding of ELPL4's old ISIN kept for six
+  years and booked at +345% when it traded again (ADR 0017, B1.12). A test checks E1
+  against notebook 0002's loop on the synthetic base.
 - Notebook `research/backtests/0003_e1_walk_forward_ibrx.ipynb`: E1 against notebook 0002's
   point-in-time line, then an equal-weight IBrX 100 walk-forward (12/1) with execution
   conventions, contributions, the worst sessions and costs (ADR 0017, B1.22).
