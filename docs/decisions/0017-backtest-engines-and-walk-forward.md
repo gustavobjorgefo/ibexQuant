@@ -263,16 +263,28 @@ and the index is optional: a study may trade a fixed list of tickers.
   ```
 
   `weights` holds target fractions of equity, indexed by decision session. A row is a
-  rebalance; a session without a row holds the units and lets them drift with prices.
-  Values are signed (a negative weight is a short), `NaN` is zero, the cash is what is left
-  (`1 - sum`), and the gross exposure is not capped. A daily-rebalanced strategy gives a
-  row every session. The engine applies the one-session lag itself (B1.4): a strategy never
-  shifts its signals, so it cannot forget to.
+  rebalance and the whole target portfolio: a security absent from it, or `NaN`, is zero,
+  never "keep what is held". A session without a row holds the units and lets them drift
+  with prices. A daily-rebalanced strategy gives a row every session. The engine applies
+  the one-session lag itself (B1.4): a strategy never shifts its signals, so it cannot
+  forget to. Decision sessions must be sessions of `bars`, unique and in order, and not the
+  last one (it has no next session).
+
+  Values are signed, as the industry books them: a position is a signed quantity (−200
+  shares is a short), its market value is signed, and a weight is market value over equity.
+  The proceeds of a short sale go to cash; the cash is what is left (`1 − sum`) and may be
+  negative (leverage). Gross exposure (`Σ|w|`) is not capped. Borrow fees on shorts and the
+  cost of leverage are E2's.
 
   `bars` covers every security the weights name, from the first decision to the last
-  session to value. With a walk-forward, it is one panel of `Securities` over the union of
-  the folds' securities. Returns do not depend on the anchor, so one panel serves the whole
-  run.
+  session to value. With a walk-forward, `WalkForward.bars(ds, folds)` loads it: one panel
+  of `Securities` over the union of the folds' securities, from the first decision session
+  to the last test session, with `open` and `close`. Returns do not depend on the anchor,
+  so one panel serves the whole run. The weights of the folds are concatenated; the
+  portfolio is one across folds. Each `FoldData` gives its `decisions`, the sessions whose
+  close makes the fold's orders, because the test panel also holds the warmup bars before
+  them: weights computed over the whole panel are cut to `decisions` before they reach the
+  engine.
 
 - **B1.10 — Accounting.** Initial equity 1, fractional units, cash at 0%. On an execution
   session the holdings are valued at the execution price (`open` or `close`), the new units
@@ -289,7 +301,7 @@ and the index is optional: a study may trade a fixed list of tickers.
   | Case | Rule |
   |---|---|
   | No bar on the execution session, bars later (suspension) | cannot trade: units kept, target ignored for that rebalance; valued at the last close |
-  | No bar after its last session in `bars` (exit) | the holding becomes cash at the last close on its last session; later targets are zero (P10 for E1) |
+  | No bar after its last session in `bars` (exit) | the holding becomes cash at the last close on its last session, at no cost; later targets are zero (P10 for E1) |
   | Target on a security with no bar yet | `ValueError` |
 
   The member still trades on its last session: nothing tells the strategy it is the last.
@@ -298,10 +310,24 @@ and the index is optional: a study may trade a fixed list of tickers.
 - **B1.13 — Costs.** `cost_bps` per side on the traded notional (`|Δunits| × price`),
   default zero. Fees, slippage and impact models are E2's.
 
-- **B1.14 — Result.** `BacktestResult` with `returns` (simple, by session, from the first
-  execution), `weights` (held at each close, after drift), `turnover` and `costs` by session.
-  `returns` feeds `ibexQuant.analytics` as is. There is no trades table: a trade needs an
-  order and a fill (E2, P6).
+- **B1.14 — Result.** `BacktestResult`, by session from the first execution. Every
+  fraction is over the equity at the previous close, so the pieces add up exactly:
+  `returns = contributions.sum(axis=1) − costs`.
+
+  | Field | Content |
+  |---|---|
+  | `returns` | simple return of the portfolio, a `Series` named `portfolio` |
+  | `contributions` | each security's profit and loss over the previous equity: its return attribution |
+  | `weights` | weights held at each close, after drift, with a `cash` column |
+  | `turnover` | traded notional over the previous equity |
+  | `costs` | costs over the previous equity |
+
+  Derived on demand: `equity` (`(1 + returns).cumprod()`), `gross_exposure` and
+  `net_exposure` (from `weights`), and `summary(periods_per_year=..., benchmark=None)`, which
+  calls `performance_summary` (ADR 0009) on `returns`. The result follows ADR 0009's
+  contract (simple returns, `DatetimeIndex`, no interior gap), so any report reads it; new
+  fields are added without changing these. There is no trades table: a trade needs an order
+  and a fill (E2, P6).
 
 - **B1.15 — Adjusted prices, on purpose.** E1 simulates on `total_return` prices: dividends
   are reinvested in the security, there is no tick or lot, and returns are exact for a
