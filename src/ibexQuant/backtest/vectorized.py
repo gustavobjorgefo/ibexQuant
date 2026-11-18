@@ -39,6 +39,7 @@ import numpy as np
 import pandas as pd
 
 from ibexQuant.analytics import PerformanceSummary, performance_summary
+from ibexQuant.backtest._alignment import execution_positions
 from ibexQuant.data.panel import Panel
 
 EXECUTIONS: Final[tuple[str, ...]] = ("next_open", "next_close")
@@ -234,23 +235,13 @@ class _Market:
 
 def _targets(weights: pd.DataFrame, market: _Market) -> dict[int, np.ndarray]:
     """Target rows by execution position: the session after each decision."""
-    sessions, symbols = market.sessions, market.symbols
     if weights.empty:
         raise ValueError("weights has no rebalance.")
-    if not (weights.index.is_monotonic_increasing and weights.index.is_unique):
-        raise ValueError("weights index must be strictly increasing (sorted, no duplicates).")
-    unknown = sorted(set(map(str, weights.columns)) - set(symbols))
-    if unknown:
-        raise ValueError(f"weights names securities that are not in bars: {unknown}.")
-    positions = sessions.get_indexer(pd.DatetimeIndex(weights.index))
-    if (positions < 0).any():
-        raise ValueError(f"Decision {weights.index[positions < 0][0]} is not a session of bars.")
-    if positions[-1] == len(sessions) - 1:
-        raise ValueError(f"Decision {sessions[-1].date()} is the last session of bars.")
-    values = weights.reindex(columns=symbols).fillna(0.0).to_numpy(dtype=float)
+    positions = execution_positions(weights, market.sessions, market.symbols, "weights")
+    values = weights.reindex(columns=market.symbols).fillna(0.0).to_numpy(dtype=float)
     if not np.isfinite(values).all():
         raise ValueError("weights must be finite.")
-    return {int(position) + 1: row for position, row in zip(positions, values, strict=True)}
+    return {int(position): row for position, row in zip(positions, values, strict=True)}
 
 
 def _result(

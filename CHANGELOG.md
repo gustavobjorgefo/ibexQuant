@@ -58,6 +58,13 @@
 - `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
   provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
   `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).
+- E1 day-trade engine (ADR 0017, B1.17–B1.21): `simulate_day_trades(bars, DayTradeOrders(size,
+  buy_limit, sell_limit | side, buy_stop, sell_stop), cost_bps=0.0)`. Orders are in the book
+  from the opening auction: a limit fills when the price trades strictly through it, at the
+  open if the auction crossed it, otherwise at the limit; stops are hit on touch, at the
+  stop or at the open; every position is flat at the close. `DayTradeResult` gives
+  `returns`, `contributions`, `costs`, a trades table for `trade_summary`, `equity`,
+  `summary` and `trade_summary`. Notebook 0003 gains a smoke test on the IBrX 100 folds.
 - E1 trades a security without a bar on the execution session at its last close, instead of
   keeping its units: notebook 0003 found a stale holding of ELPL4's old ISIN kept for six
   years and booked at +345% when it traded again (ADR 0017, B1.12). A test checks E1

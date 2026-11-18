@@ -355,35 +355,44 @@ and the index is optional: a study may trade a fixed list of tickers.
 
   | Field | Meaning |
   |---|---|
-  | `buy_limit` | limit price to buy; `NaN` = no order |
-  | `sell_limit` | limit price to sell short; `NaN` = no order |
-  | `size` | notional of each order as a fraction of equity at the close of `d − 1` |
-  | `buy_stop`, `sell_stop` | optional stop levels of each side; `NaN` = no stop |
+  | `size` | notional of each order as a fraction of equity at the close of `d − 1`; a number or a frame |
+  | `buy_limit`, `sell_limit` | limit price to buy, and to sell short; `NaN` = no order |
+  | `side` | instead of limits: +1 buys, −1 sells short at the open of `d`; 0 or `NaN` = no order |
+  | `buy_stop`, `sell_stop` | optional stop of each side; `NaN` = no stop |
 
-  `entry="open"` replaces the limits with a `side` frame (+1, −1, 0): the position opens at
-  the open of `d`.
+  An order book has limits or `side`, never both. A stop on the wrong side of its limit (a
+  buy stop at or above the buy limit, a sell stop at or below the sell limit) raises
+  `ValueError`. An order on a security without a complete bar on `d` does nothing: no
+  trade, no cost. Sizes compound: they are fractions of the equity of the previous close.
 
-- **B1.18 — Fills.** A buy limit fills when the low of `d` is strictly below it, at the
-  limit price; a sell limit when the high is strictly above it, at the limit price. Touching
-  the limit is not a fill, and a limit crossed by the open still fills at the limit, not at
-  the open: both are conservative. Both sides can fill on the same session: they are two
-  independent trades.
+- **B1.18 — Fills.** Orders are in the book from the opening auction. A buy limit fills
+  when the low of `d` is strictly below it, at the lower of the open and the limit: if the
+  auction already crossed it, the order fills at the auction's price; otherwise the price
+  traded through it during the session, and it fills at the limit. A sell limit is the
+  mirror: the high strictly above it, at the higher of the open and the limit. Touching the
+  limit is not a fill: there is no telling whether the order was reached in the queue.
+  Both sides can fill on the same session: they are two independent trades. With `side`,
+  the position opens at the open.
 
 - **B1.19 — Exits.** Every position closes at the close of `d`. A stop closes it before: a
   long stop is hit when the low reaches it (`low ≤ stop`), a short stop when the high does
-  (`high ≥ stop`), at the stop price. With a limit entry the fill is taken to come first.
-  There are no profit targets: with daily bars nobody knows whether the target or the stop
-  came first, and taking the stop is the only order that is never optimistic.
+  (`high ≥ stop`). The exit is at the stop, or at the open when the auction already went
+  through it (the lower of the open and the stop for a long). With a limit entry the fill
+  is taken to come first. There are no profit targets: with daily bars nobody knows
+  whether the target or the stop came first, and taking the stop is the only order that is
+  never optimistic.
 
 - **B1.20 — Levels on the adjusted panel.** Limits and stops computed at the close of
   `d − 1` and compared with the bars of `d` in the same `total_return` panel are on the same
   scale even when `d` is an ex-session: the adjustment removes the jump. This is P12 for E1.
   On raw bars the level would need the event's factor.
 
-- **B1.21 — Result.** Daily returns (P&L over equity at the close of `d − 1`, costs per
-  side included) and a trades table with `security_id`, `side`, `entry_time` and
-  `exit_time` (both `d`), `entry_price`, `exit_price`, `exit_reason` (`close`, `stop`) and
-  `return`, which `ibexQuant.analytics.trades` reads.
+- **B1.21 — Result.** `DayTradeResult`, by session from the first execution: `returns`
+  (P&L over the equity of the previous close), `contributions` by security, `costs`, and a
+  trades table, one row per fill: `security_id`, `side` (`long`, `short`), `entry_time` and
+  `exit_time` (both `d`), `entry_price`, `exit_price`, `exit_reason` (`close`, `stop`),
+  `size` and `return` (net of costs). `cost_bps` is paid per side on the traded notional,
+  at entry and at exit. `summary(...)` and `trade_summary(...)` call the tables of ADR 0009.
 
 ### Acceptance
 
