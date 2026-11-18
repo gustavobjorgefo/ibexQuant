@@ -69,10 +69,14 @@ class FoldData:
         The fold's securities over the training window, with ``warmup`` bars.
     test : Panel
         The fold's universe over its decision sessions, with ``warmup`` bars.
+    decisions : pandas.DatetimeIndex
+        The sessions whose close makes the fold's orders: the test panel without its
+        warmup bars. Weights computed over the test panel are cut to them.
     """
 
     train: Panel
     test: Panel
+    decisions: pd.DatetimeIndex
 
 
 @dataclass(frozen=True, eq=False)
@@ -143,7 +147,8 @@ class Fold:
             warmup=self.warmup,
             fields=fields,
         )
-        return FoldData(train=train, test=test)
+        decisions = test.index[test.index >= window.decision_start]
+        return FoldData(train=train, test=test, decisions=decisions)
 
 
 class WalkForward:
@@ -205,6 +210,36 @@ class WalkForward:
             for window in self.schedule.windows(calendar)
             for piece in self._pieces(window, calendar)
         ]
+
+    @staticmethod
+    def bars(
+        ds: B3Dataset,
+        folds: Sequence[Fold],
+        fields: Sequence[str] = ("open", "close"),
+        adjustment: str = "total_return",
+    ) -> Panel:
+        """
+        Return one panel for the simulation of the folds (ADR 0017, B1.9).
+
+        The union of the folds' securities, from the first decision session to the last
+        test session, with no warmup. Returns of adjusted bars do not depend on the anchor,
+        so one panel serves the whole run.
+
+        Raises
+        ------
+        ValueError
+            If ``folds`` is empty.
+        """
+        if not folds:
+            raise ValueError("No fold to load bars for.")
+        securities = list(dict.fromkeys(s for fold in folds for s in fold.securities))
+        return ds.panel(
+            Securities(securities),
+            folds[0].window.decision_start,
+            folds[-1].window.test_end,
+            adjustment=adjustment,
+            fields=list(fields),
+        )
 
     @staticmethod
     def summary(folds: Sequence[Fold]) -> pd.DataFrame:

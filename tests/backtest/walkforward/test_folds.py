@@ -7,6 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from ibexQuant.backtest import equal_weight, simulate_weights
 from ibexQuant.backtest.walkforward import (
     HasHistory,
     IndexComposition,
@@ -144,11 +145,53 @@ def test_load(ds: B3Dataset) -> None:
     assert data.test.universe_mask.iloc[5:].to_numpy().all()
 
 
+def test_load_gives_the_decisions(ds: B3Dataset) -> None:
+    walk = WalkForward(schedule("2024-10", "2024-10"), IndexComposition("IBOV"), warmup=5)
+    (fold,) = walk.folds(ds)
+    data = fold.load(ds, fields=["close"])
+    assert data.decisions[0] == fold.window.decision_start
+    assert data.decisions[-1] == fold.window.decision_end
+    assert len(data.decisions) == len(data.test.index) - 5
+
+
 def test_load_raw(ds: B3Dataset) -> None:
     walk = WalkForward(schedule("2024-10", "2024-10"), StaticUniverse(["PETR4"]), warmup=0)
     (fold,) = walk.folds(ds)
     data = fold.load(ds, fields=["close"], adjustment="raw")
     assert data.train.symbols == data.test.symbols == ("BRPETR",)
+
+
+# --- one simulation over the folds ---
+
+
+def test_bars_cover_the_run(ds: B3Dataset) -> None:
+    walk = WalkForward(schedule("2024-10", "2024-11"), IndexComposition("IBOV"), warmup=0)
+    folds = walk.folds(ds)
+    bars = WalkForward.bars(ds, folds)
+    assert set(bars.symbols) == {s for fold in folds for s in fold.securities}
+    assert bars.fields == ("open", "close")
+    assert bars.index[0] == folds[0].window.decision_start
+    assert bars.index[-1] == folds[-1].window.test_end
+    with pytest.raises(ValueError, match="No fold to load bars for"):
+        WalkForward.bars(ds, [])
+
+
+def test_an_equal_weight_walk_forward(ds: B3Dataset) -> None:
+    walk = WalkForward(schedule("2024-10", "2025-01"), IndexComposition("IBOV"), warmup=0)
+    folds = walk.folds(ds)
+    pieces = []
+    for fold in folds:
+        data = fold.load(ds, fields=["close"])
+        pieces.append(equal_weight(data.test.universe_mask).loc[data.decisions])
+    weights = pd.concat(pieces)
+    result = simulate_weights(WalkForward.bars(ds, folds), weights, execution="next_close")
+    assert result.returns.index[0] == folds[0].window.test_start
+    assert result.returns.index[-1] == folds[-1].window.test_end
+    assert result.returns.notna().all()
+    total = result.contributions.sum(axis=1) - result.costs
+    assert (result.returns - total).abs().max() < 1e-12
+    # QUIT3 stops on 2024-10-15 inside October's fold: cash from the next session on.
+    assert result.weights.loc["2024-10-16":, "BRQUIT"].eq(0).all()
 
 
 # --- summary, checks and repr ---

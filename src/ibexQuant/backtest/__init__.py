@@ -5,9 +5,15 @@ Backtests on top of the data base (ADR 0017).
 
 The walk-forward (``ibexQuant.backtest.walkforward``) cuts history into training
 and test windows, in layers usable alone. The engines simulate what a strategy
-does with them: E1 vectorized now; E2 and E3 in their own records.
+does with them: E1 vectorized now (:func:`simulate_weights`); E2 and E3 in their
+own records.
 
 Strategies, their parameters and their fitting never live here.
 """
 
 from __future__ import annotations
+
+from ibexQuant.backtest.vectorized import BacktestResult, simulate_weights
+from ibexQuant.backtest.weights import equal_weight
+
+__all__ = ["BacktestResult", "equal_weight", "simulate_weights"]

@@ -58,6 +58,13 @@
 - `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
   provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
   `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).
+- E1 position engine (ADR 0017, B1.9–B1.16): `simulate_weights(bars, weights,
+  execution="next_open" | "next_close", cost_bps=0.0)` simulates target weights decided at
+  closes, with drift between rebalances, signed units, suspensions kept, exits as cash at no
+  cost and a linear cost; `BacktestResult` gives `returns`, `contributions`, `weights` (with
+  `cash`), `turnover` and `costs`, all over the previous equity, plus `equity`, exposures and
+  `summary`. `equal_weight(mask)`. `WalkForward.bars(ds, folds)` loads one panel for the
+  run, and `FoldData.decisions` gives each fold's decision sessions.
 - `ibexQuant.backtest.walkforward`, layers 2 to 4 (ADR 0017, B1.5–B1.8): universe rules
   (`UniverseRule`, `StaticUniverse`, `IndexComposition` with `at_rebalance="split"` or
   `"hold"`), eligibility rules (`EligibilityRule`, `HasHistory`, `StillTrading`,
