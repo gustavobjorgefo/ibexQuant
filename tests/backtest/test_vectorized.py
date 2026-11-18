@@ -149,6 +149,10 @@ def test_result_derivations() -> None:
     summary = result.summary(periods_per_year=252)
     total = summary.metrics.loc[("return", "total_return"), "portfolio"]
     assert total == pytest.approx(13 / 11 - 1)
+    # A benchmark starting a session later and ending a session after is aligned.
+    benchmark = pd.Series(0.01, index=SESSIONS[2:].append(pd.DatetimeIndex(["2025-01-14"])))
+    aligned = result.summary(periods_per_year=252, benchmark=benchmark)
+    assert aligned.metrics.columns.tolist() == ["portfolio", "benchmark"]
 
 
 # --- validation ---

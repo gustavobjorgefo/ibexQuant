@@ -97,9 +97,15 @@ class BacktestResult:
         benchmark: pd.Series | None = None,
         risk_free: float | pd.Series = 0.0,
     ) -> PerformanceSummary:
-        """Return the performance table of ``returns`` (ADR 0009)."""
+        """
+        Return the performance table of ``returns`` (ADR 0009).
+
+        A benchmark is aligned to the sessions of ``returns``: dates outside them are
+        dropped and missing ones are ``NaN``, which the table accepts only at the edges.
+        """
+        aligned = None if benchmark is None else benchmark.reindex(self.returns.index)
         return performance_summary(
-            self.returns, benchmark, risk_free, periods_per_year=periods_per_year
+            self.returns, aligned, risk_free, periods_per_year=periods_per_year
         )
 
 

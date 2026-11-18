@@ -236,6 +236,10 @@ and the index is optional: a study may trade a fixed list of tickers.
   - `test`: `fold.universe` over `[decision_start, decision_end]` with `warmup` bars,
     anchored at `decision_end`.
 
+  `fold.load_train` and `fold.load_test` load one panel each, and `fold.decisions(calendar)`
+  gives the decision sessions without reading bars: a strategy that fits nothing (equal
+  weight) reads no bars per fold, only the run's panel (`WalkForward.bars`).
+
   The test panel is anchored at its last decision, so the adjusted levels inside it already
   carry events of later sessions of the window. Features that are scale invariant (returns,
   ratios, ranks; ADR 0005) are not affected; a strategy that uses price levels inside the
@@ -380,7 +384,8 @@ and the index is optional: a study may trade a fixed list of tickers.
   row of equal weights per IBOV period, executed at the close of its first session), E1
   reproduces the point-in-time line of notebook 0002 (daily returns within 1e-10). Then the
   same notebook runs an `IBXX` walk-forward with equal weight and monthly windows, and turns
-  on costs, measuring the effect of each change.
+  on costs, measuring the effect of each change. A suspended member on a rebalance session is the one
+  expected difference: 0002 sells it at its last value, E1 keeps its units (B1.12).
 
 ## Alternatives considered
 

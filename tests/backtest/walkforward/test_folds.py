@@ -154,6 +154,15 @@ def test_load_gives_the_decisions(ds: B3Dataset) -> None:
     assert len(data.decisions) == len(data.test.index) - 5
 
 
+def test_decisions_without_bars(ds: B3Dataset) -> None:
+    walk = WalkForward(schedule("2024-10", "2024-10"), IndexComposition("IBOV"), warmup=5)
+    (fold,) = walk.folds(ds)
+    data = fold.load(ds, fields=["close"])
+    assert fold.decisions(ds.calendar).equals(data.decisions)
+    assert fold.load_test(ds, fields=["close"]).index.equals(data.test.index)
+    assert fold.load_train(ds, fields=["close"]).index.equals(data.train.index)
+
+
 def test_load_raw(ds: B3Dataset) -> None:
     walk = WalkForward(schedule("2024-10", "2024-10"), StaticUniverse(["PETR4"]), warmup=0)
     (fold,) = walk.folds(ds)

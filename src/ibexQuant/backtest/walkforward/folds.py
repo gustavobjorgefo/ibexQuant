@@ -109,6 +109,54 @@ class Fold:
     period: str | None = None
     source: str | None = None
 
+    def decisions(self, calendar: TradingCalendar) -> pd.DatetimeIndex:
+        """Return the sessions whose close makes the fold's orders, without loading bars."""
+        return calendar.valid_sessions(self.window.decision_start, self.window.decision_end)
+
+    def load_train(
+        self,
+        ds: B3Dataset,
+        fields: Sequence[str] | None = None,
+        adjustment: str = "total_return",
+    ) -> Panel:
+        """
+        Return the fold's securities over the training window, with ``warmup`` bars.
+
+        Adjusted panels are anchored at the end of the window (``train_end``).
+        """
+        window = self.window
+        return ds.panel(
+            Securities(self.securities),
+            window.train_start,
+            window.train_end,
+            adjustment=adjustment,
+            anchor=window.train_end if adjustment != RAW else None,
+            warmup=self.warmup,
+            fields=fields,
+        )
+
+    def load_test(
+        self,
+        ds: B3Dataset,
+        fields: Sequence[str] | None = None,
+        adjustment: str = "total_return",
+    ) -> Panel:
+        """
+        Return the fold's universe over its decision sessions, with ``warmup`` bars.
+
+        Adjusted panels are anchored at the last decision (``decision_end``).
+        """
+        window = self.window
+        return ds.panel(
+            self.universe,
+            window.decision_start,
+            window.decision_end,
+            adjustment=adjustment,
+            anchor=window.decision_end if adjustment != RAW else None,
+            warmup=self.warmup,
+            fields=fields,
+        )
+
     def load(
         self,
         ds: B3Dataset,
@@ -117,6 +165,9 @@ class Fold:
     ) -> FoldData:
         """
         Return the training and test panels of the fold.
+
+        A strategy that fits nothing needs only :meth:`load_test`, or no bars at all
+        (:meth:`decisions`).
 
         Parameters
         ----------
@@ -127,28 +178,11 @@ class Fold:
         adjustment : {"total_return", "splits", "raw"}, default "total_return"
             As in ``ds.panel``; adjusted panels are anchored at the end of their range.
         """
-        window = self.window
-        adjusted = adjustment != RAW
-        train = ds.panel(
-            Securities(self.securities),
-            window.train_start,
-            window.train_end,
-            adjustment=adjustment,
-            anchor=window.train_end if adjusted else None,
-            warmup=self.warmup,
-            fields=fields,
+        test = self.load_test(ds, fields, adjustment)
+        decisions = test.index[test.index >= self.window.decision_start]
+        return FoldData(
+            train=self.load_train(ds, fields, adjustment), test=test, decisions=decisions
         )
-        test = ds.panel(
-            self.universe,
-            window.decision_start,
-            window.decision_end,
-            adjustment=adjustment,
-            anchor=window.decision_end if adjusted else None,
-            warmup=self.warmup,
-            fields=fields,
-        )
-        decisions = test.index[test.index >= window.decision_start]
-        return FoldData(train=train, test=test, decisions=decisions)
 
 
 class WalkForward:

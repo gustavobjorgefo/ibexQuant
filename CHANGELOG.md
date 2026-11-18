@@ -58,6 +58,14 @@
 - `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
   provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
   `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).
+- Notebook `research/backtests/0003_e1_walk_forward_ibrx.ipynb`: E1 against notebook 0002's
+  point-in-time line, then an equal-weight IBrX 100 walk-forward (12/1) with execution
+  conventions, contributions, the worst sessions and costs (ADR 0017, B1.22).
+- `Fold.decisions(calendar)`, `Fold.load_train` and `Fold.load_test`: a strategy that fits
+  nothing reads no bars per fold. `BacktestResult.summary` aligns the benchmark to the
+  sessions of the returns.
+- `B3Provider` reads the ledger's unexplained jumps once and logs each jump once per
+  provider, instead of on every request that crosses it.
 - E1 position engine (ADR 0017, B1.9–B1.16): `simulate_weights(bars, weights,
   execution="next_open" | "next_close", cost_bps=0.0)` simulates target weights decided at
   closes, with drift between rebalances, signed units, suspensions kept, exits as cash at no
