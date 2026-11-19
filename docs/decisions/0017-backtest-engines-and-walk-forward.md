@@ -1,7 +1,7 @@
 # 0017 — Backtest engines, walk-forward schedule and the vectorized engine
 
-- Status: Proposed
-- Date: 2026-11-17
+- Status: Accepted
+- Date: 2026-11-19
 - Phase: B1
 
 ## Context
