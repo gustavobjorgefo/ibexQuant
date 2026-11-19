@@ -22,7 +22,9 @@ Contract
   derived factor table, joined by security, so a followed ticker is adjusted
   along its whole chain. ``adjusted=False`` serves raw prices.
 - A served range that contains an unexplained jump of the ledger is logged
-  as a warning: the raw move stays in the adjusted series (H4.9).
+  as a warning: the raw move stays in the adjusted series (H4.9). The ledger's
+  jumps are read once per provider, and each jump is logged once per provider,
+  however many requests cross it (ADR 0017, B1.e).
 - Renames are followed by default (ADR 0012, H2.14): a ticker is resolved
   to its security, and the security's whole round-lot history in the range
   is served under the requested ticker. ``follow_renames=False`` serves the
@@ -94,6 +96,8 @@ class B3Provider(MarketDataProvider):
         super().__init__(frequency="1d")
         self._store: DataStore = store
         self._follow_renames: bool = follow_renames
+        self._jumps: pd.DataFrame | None = None
+        self._warned: set[tuple[str, pd.Timestamp]] = set()
 
     # --- public API ---
 
@@ -304,24 +308,38 @@ class B3Provider(MarketDataProvider):
     def _warn_unexplained_jumps(
         self, rows: pd.DataFrame, first: pd.Timestamp, last: pd.Timestamp
     ) -> None:
-        from ibexQuant.data.reference.corporate_actions import ExSessionStatus, read_ledger
-
-        _, ex = read_ledger(self._store)
-        jumps = ex[
-            (ex["status"] == ExSessionStatus.UNEXPLAINED_JUMP)
-            & ex["security_id"].isin(set(rows["security_id"]))
-            & (ex["session_date"] > first)
-            & (ex["session_date"] <= last)
+        jumps = self._unexplained_jumps()
+        jumps = jumps[
+            jumps["security_id"].isin(set(rows["security_id"]))
+            & (jumps["session_date"] > first)
+            & (jumps["session_date"] <= last)
         ]
-        for ticker, day, ratio in zip(
-            jumps["ticker"], jumps["session_date"].dt.date, jumps["open_ratio"], strict=True
+        for security, ticker, day, ratio in zip(
+            jumps["security_id"],
+            jumps["ticker"],
+            jumps["session_date"],
+            jumps["open_ratio"],
+            strict=True,
         ):
+            # A walk-forward reads the same range many times: one warning is enough.
+            if (security, day) in self._warned:
+                continue
+            self._warned.add((security, day))
             logger.warning(
                 "Unexplained jump kept in adjusted bars: %s on %s (open / previous close %.3f)",
                 ticker,
-                day,
+                day.date(),
                 ratio,
             )
+
+    def _unexplained_jumps(self) -> pd.DataFrame:
+        """The ledger's unexplained jumps, read on first use."""
+        if self._jumps is None:
+            from ibexQuant.data.reference.corporate_actions import ExSessionStatus, read_ledger
+
+            _, ex = read_ledger(self._store)
+            self._jumps = ex[ex["status"] == ExSessionStatus.UNEXPLAINED_JUMP]
+        return self._jumps
 
     def _read_securities(
         self, tickers: list[str], first: pd.Timestamp, last: pd.Timestamp

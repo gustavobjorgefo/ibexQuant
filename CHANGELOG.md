@@ -58,6 +58,49 @@
 - `ibexQuant.download(tickers, start, end, adjustment=..., anchor=..., fields=...)`: the B3
   provider's daily bars, wide like `yfinance.download` (one ticker: fields; a list:
   `(field, ticker)` columns), loaded lazily from the package root (ADR 0015, H5.10).
+- E1 day-trade engine (ADR 0017, B1.17–B1.21): `simulate_day_trades(bars, DayTradeOrders(size,
+  buy_limit, sell_limit | side, buy_stop, sell_stop), cost_bps=0.0)`. Orders are in the book
+  from the opening auction: a limit fills when the price trades strictly through it, at the
+  open if the auction crossed it, otherwise at the limit; stops are hit on touch, at the
+  stop or at the open; every position is flat at the close. `DayTradeResult` gives
+  `returns`, `contributions`, `costs`, a trades table for `trade_summary`, `equity`,
+  `summary` and `trade_summary`. Notebook 0003 gains a smoke test on the IBrX 100 folds.
+- E1 trades a security without a bar on the execution session at its last close, instead of
+  keeping its units: notebook 0003 found a stale holding of ELPL4's old ISIN kept for six
+  years and booked at +345% when it traded again (ADR 0017, B1.12). A test checks E1
+  against notebook 0002's loop on the synthetic base.
+- Notebook `research/backtests/0003_e1_walk_forward_ibrx.ipynb`: E1 against notebook 0002's
+  point-in-time line, then an equal-weight IBrX 100 walk-forward (12/1) with execution
+  conventions, contributions, the worst sessions and costs (ADR 0017, B1.22).
+- `Fold.decisions(calendar)`, `Fold.load_train` and `Fold.load_test`: a strategy that fits
+  nothing reads no bars per fold. `BacktestResult.summary` aligns the benchmark to the
+  sessions of the returns.
+- `B3Provider` reads the ledger's unexplained jumps once and logs each jump once per
+  provider, instead of on every request that crosses it.
+- E1 position engine (ADR 0017, B1.9–B1.16): `simulate_weights(bars, weights,
+  execution="next_open" | "next_close", cost_bps=0.0)` simulates target weights decided at
+  closes, with drift between rebalances, signed units, suspensions kept, exits as cash at no
+  cost and a linear cost; `BacktestResult` gives `returns`, `contributions`, `weights` (with
+  `cash`), `turnover` and `costs`, all over the previous equity, plus `equity`, exposures and
+  `summary`. `equal_weight(mask)`. `WalkForward.bars(ds, folds)` loads one panel for the
+  run, and `FoldData.decisions` gives each fold's decision sessions.
+- `ibexQuant.backtest.walkforward`, layers 2 to 4 (ADR 0017, B1.5–B1.8): universe rules
+  (`UniverseRule`, `StaticUniverse`, `IndexComposition` with `at_rebalance="split"` or
+  `"hold"`), eligibility rules (`EligibilityRule`, `HasHistory`, `StillTrading`,
+  `MinimumPresence`) and `WalkForward`, whose `folds(ds)` gives `Fold` objects with their
+  excluded candidates and `load(ds)` gives their `FoldData`; `WalkForward.summary(folds)`.
+- `B3Dataset.members(universe, start, end)`: the membership mask `ds.panel` uses, without
+  bars (ADR 0017, B1.8).
+- `ibexQuant.backtest.walkforward`, layer 1 (ADR 0017, B1.4): `WalkForwardSchedule(start,
+  end, train_months=..., test_months=..., step_months=None, expanding=False)` cuts any
+  `TradingCalendar` into `Window` objects (training, decision and test sessions), with
+  `window(first, last, calendar)` for one range of test months, `frame(calendar)` and
+  `tiles`; `WalkForwardError`.
+- `Securities([...])`: a universe of fixed `security_id` values, members at every session
+  (ADR 0017, B1.8).
+- `B3Dataset.composition(index, period)`: the members of one index period by its label,
+  before B3's effective date if a study wants it; `constituents` reads through it
+  (ADR 0017, B1.8).
 - Universe mask (ADR 0015): `Index`, `Tickers` and `LiquidityRule` specifications,
   combined with `|`, `&` and `-`, and `universe_mask` (sessions × `security_id`). IBOV
   periods without a B3 portfolio take the liquidity rule (`liquidity_rule` source); the

@@ -48,6 +48,7 @@ does, but *why it is not done differently*.
 | 0014 | [Anchored price adjustment](0014-anchored-adjustment.md) | Accepted | H4 |
 | 0015 | [Point-in-time universe](0015-point-in-time-universe.md) | Accepted | H5 |
 | 0016 | [Dataset API](0016-dataset-api.md) | Accepted | H6 |
+| 0017 | [Backtest engines, walk-forward schedule and the vectorized engine](0017-backtest-engines-and-walk-forward.md) | Accepted | B1 |
 
 ## Pending items
 
@@ -60,15 +61,16 @@ resolved; when it is, the resolving record is linked here.
 | P2 | `SessionsSinceLastObservation` node, exposing absence to the model (see 0003) | Phase 2 |
 | P3 | Universe module: Ibovespa composition by effective date and point-in-time liquidity filter (see 0004) | Resolved in H5: [0015](0015-point-in-time-universe.md) |
 | P4 | Unadjusted prices in `Panel` for features that are not scale invariant (see 0005) | Raw prices available through `B3Provider` (0011); adjusted alongside raw in H4 |
-| P5 | Backtest runner loads data from `lookback` sessions before the backtest start, using `FeatureSet.lookback` and the trading calendar (see 0008) | Backtest engine design |
+| P5 | Backtest runner loads data from `lookback` sessions before the backtest start, using `FeatureSet.lookback` and the trading calendar (see 0008) | Resolved in B1: [0017](0017-backtest-engines-and-walk-forward.md) (`warmup` before each fold's ranges) |
 | P6 | Backtest engine produces the trades table (`entry_time`, `exit_time`, result per trade) and positions, enabling exposure and turnover metrics from holdings (see 0009) | Backtest engine design |
 | P7 | `analytics/inference.py`: normality, significance of the mean, Probabilistic Sharpe Ratio; scipy as an optional `stats` extra (see 0009) | After plotting |
 | P8 | Deflated Sharpe Ratio and multiple-testing corrections, which need the number of strategies tried (see 0009) | Phase 5 |
 | P9 | Backtest engine option: execute on raw prices and credit event cash (JCP net of withholding) on the payment date, never combined with adjusted prices (see 0014) | Backtest engine design |
-| P10 | Valuation of holdings that stop trading inside an index period (delisting returns); the exits are recorded in `index_exits.parquet` (see 0015) | Backtest engine design |
+| P10 | Valuation of holdings that stop trading inside an index period (delisting returns); the exits are recorded in `index_exits.parquet` (see 0015) | E1 in B1: cash at the last close ([0017](0017-backtest-engines-and-walk-forward.md)); E2 follows conversions into the security received |
 | P11 | Execution and accounting precision: adjusted prices stay at full precision for research; orders and fills use raw prices on B3's tick and lot; cash, fees and P&L in exact cents (see 0015) | Backtest engine design |
 | P12 | Price levels kept across an ex-session (targets, stops, pending orders) are rescaled by the event's factor on the ex-session (see 0016) | Backtest engine design |
-| P13 | Corporate event quality: the ledger build flags share events of opposite direction on one ex-session as a conflict; the jumps still kept raw (1997–2000, DROG3, ELPL4, PCAR4, ENEV3) are reviewed (see 0016) | Before the daily engine's first study |
+| P13 | Corporate event quality: the ledger build flags share events of opposite direction on one ex-session as a conflict; the jumps still kept raw (1997–2000, DROG3, ELPL4, PCAR4, ENEV3) are reviewed (see 0016); ELPL4 on 2010-12-21 is the ticker moving back to `BRELPLACNPR6`, silent for years at a price in another scale (see 0017) | Before the daily engine's first study |
+| P14 | Cash yield: uninvested cash earns the CDI; the series is added to the base (see 0017) | E2 engine design |
 
 ## Roadmap
 
@@ -102,14 +104,18 @@ The B3 equities data base that replaces yfinance for long backtests (see
 
 ### Backtest engines
 
-Simulation on top of the data base (see 0016). The daily engine carries positions across
-sessions and resolves P5, P6 and P9–P12; the day-trade engine is flat at every close.
+Simulation on top of the data base (see 0016, 0017). Three levels: E1 vectorized, E2
+precomputed signals with an event loop, E3 full event-driven and shared with live trading.
+Two holding models: positions carried across bars, and day trades on daily bars, flat at
+every close.
 
-| Part            | Scope                                                                 | Status      |
-|-----------------|-----------------------------------------------------------------------|-------------|
-| Daily engine    | Positions across sessions, raw execution, event cash, exits           | Not started |
-| Walk-forward    | `WalkForwardSchedule`: training and test windows, anchor per decision | Not started |
-| Day-trade engine| Daily bars: limit orders filled when the low or high strictly crosses the limit, at the limit price; flat at the close | Not started |
+| Part              | Scope                                                                 | Status      |
+|-------------------|-----------------------------------------------------------------------|-------------|
+| Walk-forward (B1) | Layers: time windows, universe rules (static, index), eligibility, folds and their data | Done        |
+| E1 position (B1)  | Vectorized target weights, drift, exits as cash, linear costs         | Done        |
+| E1 day-trade (B1) | Limit fills on strict crossing (at the open if the auction crossed), stops, flat at the close | Done        |
+| E2                | Event loop over precomputed signals: raw execution, event cash, tick and lot, trades table (P6, P9–P12, P14) | Not started |
+| E3                | Full event-driven, live-capable (P1)                                  | Not started |
 
 ### Research and reporting
 

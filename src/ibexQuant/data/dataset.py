@@ -8,7 +8,7 @@ Responsibility
 Assemble, in one call, the ``Panel`` of a universe over a range: the members' bars by
 ``security_id`` from the provider, aligned to B3's own sessions, adjusted to an anchor,
 with warmup history and the point-in-time universe mask. Around it, the lookups a study
-needs: members on a date, period starts, events, exits and tickers.
+needs: members on a date or in a period, period starts, events, exits and tickers.
 
 Contract
 --------
@@ -49,7 +49,7 @@ from ibexQuant.data.reference.corporate_actions import read_ledger
 from ibexQuant.data.reference.errors import SecurityMasterError
 from ibexQuant.data.reference.security_master import SecurityMaster
 from ibexQuant.data.store import DataStore
-from ibexQuant.data.universe.calendar import assign_periods
+from ibexQuant.data.universe.calendar import assign_periods, parse_period
 from ibexQuant.data.universe.constituents import read_index_exits
 from ibexQuant.data.universe.errors import UniverseError
 from ibexQuant.data.universe.mask import Index, Tickers, Universe, UniverseData, universe_mask
@@ -192,13 +192,10 @@ class B3Dataset:
         if warmup < 0:
             raise ValueError(f"warmup must be zero or positive, got {warmup}.")
 
-        decisions = self._calendar.valid_sessions(start, end)
-        if decisions.empty:
-            raise ValueError(f"No B3 session between {start} and {end}.")
+        members = self.members(spec, start, end)
+        decisions = pd.DatetimeIndex(members.index)
         first = self._calendar.offset(decisions[0], warmup)
         last = decisions[-1]
-
-        members = universe_mask(spec, decisions, data=self._universe_data())
         if members.columns.empty:
             raise ValueError(
                 f"{spec} has no member between {decisions[0].date()} and {last.date()}."
@@ -218,11 +215,48 @@ class B3Dataset:
         mask = members.reindex(index=panel.index, columns=list(panel.symbols), fill_value=False)
         return panel.with_universe_mask(mask.astype(bool))
 
+    def members(
+        self, universe: Universe | str | Sequence[str], start: DateLike, end: DateLike
+    ) -> pd.DataFrame:
+        """
+        Return the membership of a universe at each session of ``[start, end]``.
+
+        The mask :meth:`panel` uses, without loading bars (ADR 0017, B1.8).
+
+        Parameters
+        ----------
+        universe : Universe, str or sequence of str
+            A universe specification, an index code or a list of tickers.
+        start, end : str or pandas.Timestamp
+            Range of sessions.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Boolean, indexed by session, one column per ``security_id`` that is a
+            member on at least one session, sorted.
+
+        Raises
+        ------
+        TypeError
+            If ``universe`` is not a ``Universe``, a string or a sequence of strings.
+        ValueError
+            If the range has no session.
+        """
+        spec = as_universe(universe)
+        sessions = self._calendar.valid_sessions(start, end)
+        if sessions.empty:
+            raise ValueError(f"No B3 session between {start} and {end}.")
+        return universe_mask(spec, sessions, data=self._universe_data())
+
     # --- lookups ---
 
     def constituents(self, index: str, as_of: DateLike) -> pd.DataFrame:
         """
         Return the members of ``index`` in the period in force on ``as_of``.
+
+        The period in force follows B3's effective dates (ADR 0015, H5.3); for one
+        period by its label, see :meth:`composition`.
 
         Returns
         -------
@@ -234,13 +268,41 @@ class B3Dataset:
         data = self._universe_data()
         day = pd.DatetimeIndex([pd.Timestamp(as_of).normalize()])
         period = assign_periods(day, data.periods).iloc[0]
-        table = data.constituents
-        rows = table[
-            (table["index"] == index) & (table["period"] == ("" if pd.isna(period) else period))
-        ]
-        columns = ["security_id", "ticker", "source", "period"]
-        members: pd.DataFrame = rows[columns].sort_values("ticker").reset_index(drop=True)
-        return members
+        return self._members(data, index, "" if pd.isna(period) else str(period))
+
+    def composition(self, index: str, period: str) -> pd.DataFrame:
+        """
+        Return the members of ``index`` in one period, by its label.
+
+        Unlike :meth:`constituents`, the period is named, not found from a date: a
+        study may apply a portfolio before B3's effective date (ADR 0017, B1.5).
+
+        Parameters
+        ----------
+        index : str
+            Index code (``IBOV``, ``IBXX``...).
+        period : str
+            Period label ``YYYY-MM``: January, May or September.
+
+        Returns
+        -------
+        pandas.DataFrame
+            The columns of :meth:`constituents`; empty when the index has no
+            composition in the period.
+
+        Raises
+        ------
+        ValueError
+            If ``period`` is not a period label or not a period of the base.
+        """
+        parse_period(period)
+        data = self._universe_data()
+        labels = data.periods["period"].astype(str)
+        if period not in set(labels):
+            raise ValueError(
+                f"{period} is not a period of the base ({labels.min()} to {labels.max()})."
+            )
+        return self._members(data, index, period)
 
     def rebalance_dates(self, index: str, start: DateLike, end: DateLike) -> pd.DatetimeIndex:
         """Return the starts of the periods with a composition of ``index`` in the range."""
@@ -356,6 +418,15 @@ class B3Dataset:
         if self._universe is None:
             self._universe = UniverseData(self._store)
         return self._universe
+
+    @staticmethod
+    def _members(data: UniverseData, index: str, period: str) -> pd.DataFrame:
+        """Members of ``index`` in the period labelled ``period``, by ticker."""
+        table = data.constituents
+        rows = table[(table["index"] == index) & (table["period"] == period)]
+        columns = ["security_id", "ticker", "source", "period"]
+        members: pd.DataFrame = rows[columns].sort_values("ticker").reset_index(drop=True)
+        return members
 
     def _security_master(self) -> SecurityMaster:
         if self._master is None:

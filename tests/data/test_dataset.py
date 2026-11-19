@@ -197,6 +197,59 @@ def test_constituents_on_a_date(ds: B3Dataset) -> None:
     assert ds.constituents("IBOV", "2024-04-01").empty
 
 
+def test_members(ds: B3Dataset) -> None:
+    mask = ds.members("IBOV", "2024-08-29", "2024-09-03")
+    assert mask.columns.tolist() == SEPTEMBER
+    assert mask.index.equals(
+        pd.DatetimeIndex(["2024-08-29", "2024-08-30", "2024-09-02", "2024-09-03"])
+    )
+    assert not mask.loc["2024-08-30", "BRLATE"]
+    assert mask.loc["2024-09-02"].all()
+
+
+def test_members_needs_a_session(ds: B3Dataset) -> None:
+    with pytest.raises(ValueError, match="No B3 session between 2024-03-02 and 2024-03-03"):
+        ds.members(["PETR4"], "2024-03-02", "2024-03-03")
+
+
+def test_composition_of_a_period(ds: B3Dataset) -> None:
+    members = ds.composition("IBOV", "2024-09")
+    assert members.equals(ds.constituents("IBOV", "2024-09-10"))
+    assert ds.composition("IBXX", "2024-09")["ticker"].tolist() == [
+        "DUPL3",
+        "PAUS3",
+        "PETR4",
+        "STOP3",
+    ]
+
+
+def test_composition_applies_before_the_effective_date(ds: B3Dataset) -> None:
+    # 2025-01-03 is a Friday: B3's portfolio of January starts on Monday 2025-01-06.
+    assert set(ds.constituents("IBOV", "2025-01-03")["period"]) == {"2024-09"}
+    january = ds.composition("IBOV", "2025-01")
+    assert january["ticker"].tolist() == ["NEWX3", "PETR4", "VALE3"]
+    assert january.equals(ds.constituents("IBOV", "2025-01-06"))
+
+
+def test_composition_of_a_period_without_members_is_empty(ds: B3Dataset) -> None:
+    members = ds.composition("IBXX", "2024-05")
+    assert members.empty
+    assert members.columns.tolist() == ["security_id", "ticker", "source", "period"]
+
+
+@pytest.mark.parametrize(
+    ("period", "message"),
+    [
+        ("2024-5", "not a period label"),
+        ("2024-03", "not a period label"),
+        ("2023-09", r"not a period of the base \(2024-05 to 2025-01\)"),
+    ],
+)
+def test_composition_checks_the_period(ds: B3Dataset, period: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        ds.composition("IBOV", period)
+
+
 def test_rebalance_dates(ds: B3Dataset) -> None:
     assert ds.rebalance_dates("IBOV", "2024-01-01", "2025-12-31").tolist() == [
         DAY("2024-05-06"),

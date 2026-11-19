@@ -18,6 +18,9 @@ Contract
   master does not know is logged and skipped.
 - ``LiquidityRule(top=...)``: at each period's base session, the ``top``
   most traded eligible shares, from data up to that session only.
+- ``Securities([...])``: fixed ``security_id`` values, members at every session
+  (ADR 0017, B1.8). Whether a security was listed then is the panel's business,
+  so the master is not read.
 - ``a | b``, ``a & b`` and ``a - b`` combine universes session by session.
 - The mask is membership only. Whether a security traded on a given session
   is the panel's business (missing bars); sessions outside every period have
@@ -175,6 +178,40 @@ class Tickers(Universe):
         return _frame(sessions, columns)
 
 
+@dataclass(frozen=True, init=False)
+class Securities(Universe):
+    """
+    A fixed set of securities, by ``security_id``, members at every session.
+
+    The backtest asks for the exact securities it selected; a ``security_id``
+    is never reused, unlike a ticker. An identifier unknown to the base is a
+    column without bars, not an error.
+
+    Parameters
+    ----------
+    security_ids : sequence of str or str
+        ``security_id`` values; repeated values are kept once, in order.
+
+    Raises
+    ------
+    ValueError
+        If no ``security_id`` is given.
+    """
+
+    security_ids: tuple[str, ...]
+
+    def __init__(self, security_ids: Sequence[str] | str) -> None:
+        given = (security_ids,) if isinstance(security_ids, str) else security_ids
+        values = tuple(dict.fromkeys(given))
+        if not values:
+            raise ValueError("Securities needs at least one security_id.")
+        object.__setattr__(self, "security_ids", values)
+
+    def mask(self, data: UniverseData, sessions: pd.DatetimeIndex) -> pd.DataFrame:
+        columns: dict[str, object] = dict.fromkeys(self.security_ids, True)
+        return _frame(sessions, columns)
+
+
 @dataclass(frozen=True)
 class LiquidityRule(Universe):
     """
@@ -261,7 +298,7 @@ def universe_mask(
     Parameters
     ----------
     universe : Universe
-        ``Index``, ``Tickers``, ``LiquidityRule`` or a combination.
+        ``Index``, ``Tickers``, ``LiquidityRule``, ``Securities`` or a combination.
     sessions : pandas.DatetimeIndex
         Sessions to evaluate, in the order wanted.
     store : DataStore, optional

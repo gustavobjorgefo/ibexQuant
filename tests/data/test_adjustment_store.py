@@ -161,6 +161,20 @@ def test_unexplained_jumps_in_range_are_logged(
     assert "Unexplained jump kept in adjusted bars: PETR3 on 2024-05-03" in caplog.text
 
 
+def test_each_jump_is_logged_once_per_provider(
+    built: DataStore, caplog: pytest.LogCaptureFixture
+) -> None:
+    message = "Unexplained jump kept in adjusted bars: PETR3 on 2024-05-03"
+    provider = B3Provider(built)
+    with caplog.at_level(logging.WARNING):
+        provider.get_bars("PETR3", START, END)
+        provider.get_bars("PETR3", START, END)
+    assert caplog.text.count(message) == 1
+    with caplog.at_level(logging.WARNING):
+        B3Provider(built).get_bars("PETR3", START, END)
+    assert caplog.text.count(message) == 2
+
+
 @pytest.mark.parametrize(
     ("options", "message"),
     [
